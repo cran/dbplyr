@@ -7,63 +7,68 @@ db_desc.PostgreSQLConnection <- function(x) {
     host, ":", info$port, "/", info$dbname, "]")
 }
 
+
+#' @export
+db_desc.PostgreSQL <- db_desc.PostgreSQLConnection
+
+#' @export
+db_desc.PqConnection <- db_desc.PostgreSQLConnection
+
 #' @export
 sql_translate_env.PostgreSQLConnection <- function(con) {
   sql_variant(
     sql_translator(.parent = base_scalar,
-      log = function(x, base = exp(1)) {
-        if (isTRUE(all.equal(base, exp(1)))) {
-          build_sql("ln(", x, ")")
+      log10  = function(x) sql_expr(log(!!x)),
+      log    = sql_log(),
+      cot    = sql_cot(),
+      round  = function(x, digits = 0L) {
+        digits <- as.integer(digits)
+        sql_expr(round((!!x) %::% numeric, !!digits))
+      },
+      grepl  = function(pattern, x, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE) {
+        # https://www.postgresql.org/docs/current/static/functions-matching.html#FUNCTIONS-POSIX-TABLE
+        if (any(c(perl, fixed, useBytes))) {
+          stop("perl, fixed and useBytes parameters are unsupported")
+        }
+        if (ignore.case) {
+          sql_expr((!!x) %~*% (!!pattern))
         } else {
-          # Use log change-of-base because postgres doesn't support the
-          # two-argument "log(base, x)" for floating point x.
-          build_sql("log(", x, ") / log(", base, ")")
+          sql_expr((!!x) %~% (!!pattern))
         }
       },
-      log10  = function(x) build_sql("log(", x, ")"),
-      cot    = function(x) build_sql("1 / TAN(", x, ")"),
-      cosh   = function(x) build_sql("(EXP(", x, ") + EXP(-", x,")) / 2"),
-      sinh   = function(x) build_sql("(EXP(", x, ") - EXP(-", x,")) / 2"),
-      tanh   = function(x) {
-        build_sql(
-          "((EXP(", x, ") - EXP(-", x,")) / 2) / ((EXP(", x, ") + EXP(-", x,")) / 2)"
-        )},
-      coth   = function(x){
-        build_sql(
-          "((EXP(", x, ") + EXP(-", x,")) / 2) / ((EXP(", x, ") - EXP(-", x,")) / 2)"
-        )},
-      round  = function(x, digits = 0L){
-        build_sql(
-          "ROUND((", x, ")::numeric, ", as.integer(digits),")"
-        )},
-      paste  = function(..., sep = " "){
-        build_sql(
-          "CONCAT_WS(",sep, ", ",escape(c(...), parens = "", collapse = ","),")"
-        )}
+      paste  = sql_paste(" "),
+      paste0 = sql_paste(""),
+      # stringr functions
+      str_locate  = function(string, pattern) {
+        sql_expr(strpos(!!string, !!pattern))
+      },
+      str_detect  = function(string, pattern){
+        sql_expr(strpos(!!string, !!pattern) > 0L)
+      }
     ),
     sql_translator(.parent = base_agg,
-      n = function() sql("count(*)"),
-      cor = sql_prefix("corr"),
-      cov = sql_prefix("covar_samp"),
-      sd = sql_prefix("stddev_samp"),
-      var = sql_prefix("var_samp"),
-      all = sql_prefix("bool_and"),
-      any = sql_prefix("bool_or"),
-      paste = function(x, collapse) build_sql("string_agg(", x, ", ", collapse, ")")
+      n = function() sql("COUNT(*)"),
+      cor = sql_aggregate_2("corr"),
+      cov = sql_aggregate_2("covar_samp"),
+      sd = sql_aggregate("stddev_samp"),
+      var = sql_aggregate("var_samp"),
+      all = sql_aggregate("bool_and"),
+      any = sql_aggregate("bool_or"),
+      str_flatten = function(x, collapse) sql_expr(string_agg(!!x, !!collapse))
     ),
     sql_translator(.parent = base_win,
       n = function() {
-        win_over(sql("count(*)"), partition = win_current_group())
+        win_over(sql("COUNT(*)"), partition = win_current_group())
       },
-      cor = win_recycled("corr"),
-      cov = win_recycled("covar_samp"),
-      sd =  win_recycled("stddev_samp"),
-      var = win_recycled("var_samp"),
-      all = win_recycled("bool_and"),
-      any = win_recycled("bool_or"),
-      paste = function(x, collapse) {
+      cor = win_aggregate_2("corr"),
+      cov = win_aggregate_2("covar_samp"),
+      sd =  win_aggregate("stddev_samp"),
+      var = win_aggregate("var_samp"),
+      all = win_aggregate("bool_and"),
+      any = win_aggregate("bool_or"),
+      str_flatten = function(x, collapse) {
         win_over(
-          build_sql("string_agg(", x, ", ", collapse, ")"),
+          sql_expr(string_agg(!!x, !!collapse)),
           partition = win_current_group(),
           order = win_current_order()
         )
@@ -71,6 +76,12 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
     )
   )
 }
+
+#' @export
+sql_translate_env.PostgreSQL <- sql_translate_env.PostgreSQLConnection
+
+#' @export
+sql_translate_env.PqConnection <- sql_translate_env.PostgreSQLConnection
 
 # DBI methods ------------------------------------------------------------------
 
@@ -83,6 +94,40 @@ db_has_table.PostgreSQLConnection <- function(con, table, ...) {
 #' @export
 db_begin.PostgreSQLConnection <- function(con, ...) {
   dbExecute(con, "BEGIN TRANSACTION")
+}
+
+#' @export
+db_write_table.PostgreSQLConnection <- function(con, table, types, values,
+                                                temporary = TRUE, ...) {
+
+  db_create_table(con, table, types, temporary = temporary)
+
+  if (nrow(values) == 0)
+    return(NULL)
+
+  cols <- lapply(values, escape, collapse = NULL, parens = FALSE, con = con)
+  col_mat <- matrix(unlist(cols, use.names = FALSE), nrow = nrow(values))
+
+  rows <- apply(col_mat, 1, paste0, collapse = ", ")
+  values <- paste0("(", rows, ")", collapse = "\n, ")
+
+  sql <- build_sql("INSERT INTO ", as.sql(table), " VALUES ", sql(values))
+  dbExecute(con, sql)
+
+  table
+}
+
+#' @export
+db_query_fields.PostgreSQLConnection <- function(con, sql, ...) {
+  fields <- build_sql(
+    "SELECT * FROM ", sql_subquery(con, sql), " WHERE 0=1",
+    con = con
+  )
+
+  qry <- dbSendQuery(con, fields)
+  on.exit(dbClearResult(qry))
+
+  dbGetInfo(qry)$fieldDescription[[1]]$name
 }
 
 # http://www.postgresql.org/docs/9.3/static/sql-explain.html
@@ -101,33 +146,9 @@ db_explain.PostgreSQLConnection <- function(con, sql, format = "text", ...) {
 }
 
 #' @export
-db_write_table.PostgreSQLConnection <- function(con, table, types, values,
-                                                temporary = TRUE, ...) {
-
-  db_create_table(con, table, types, temporary = temporary)
-
-  if (nrow(values) == 0)
-    return(NULL)
-
-  cols <- lapply(values, escape, collapse = NULL, parens = FALSE, con = con)
-  col_mat <- matrix(unlist(cols, use.names = FALSE), nrow = nrow(values))
-
-  rows <- apply(col_mat, 1, paste0, collapse = ", ")
-  values <- paste0("(", rows, ")", collapse = "\n, ")
-
-  sql <- build_sql("INSERT INTO ", ident(table), " VALUES ", sql(values))
-  dbExecute(con, sql)
-}
+db_explain.PostgreSQL <- db_explain.PostgreSQLConnection
 
 #' @export
-db_query_fields.PostgreSQLConnection <- function(con, sql, ...) {
-  fields <- build_sql(
-    "SELECT * FROM ", sql_subquery(con, sql), " WHERE 0=1",
-    con = con
-  )
+db_explain.PqConnection <- db_explain.PostgreSQLConnection
 
-  qry <- dbSendQuery(con, fields)
-  on.exit(dbClearResult(qry))
-
-  dbGetInfo(qry)$fieldDescription[[1]]$name
-}
+globalVariables(c("strpos", "%::%", "string_agg", "%~*%", "%~%"))

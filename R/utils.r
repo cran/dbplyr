@@ -91,10 +91,15 @@ succeeds <- function(x, quiet = FALSE) {
   )
 }
 
-inc_seq <- function(from, to) {
-  if (from > to) {
-    integer()
-  } else {
-    seq.int(from, to)
+c_character <- function(...) {
+  x <- c(...)
+  if (length(x) == 0) {
+    return(character())
   }
+
+  if (!is.character(x)) {
+    stop("Character input expected", call. = FALSE)
+  }
+
+  x
 }

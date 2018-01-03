@@ -33,9 +33,18 @@ test_register_src <- function(name, src) {
 #' @export
 #' @rdname testing
 test_register_con <- function(name, ...) {
-  test_register_src(name, src_dbi(DBI::dbConnect(...)))
+  test_register_src(name, src_dbi(DBI::dbConnect(...), auto_disconnect = TRUE))
 }
 
+#' @export
+#' @rdname testing
+src_test <- function(name) {
+  srcs <- test_srcs$get()
+  if (!name %in% names(srcs)) {
+    stop("Couldn't find test src ", name, call. = FALSE)
+  }
+  srcs[[name]]
+}
 
 #' @export
 #' @rdname testing
@@ -57,7 +66,7 @@ test_frame <- function(..., srcs = test_srcs$get(), ignore = character()) {
 
 test_frame_windowed <- function(...) {
   # SQLite and MySQL don't support window functions
-  test_frame(..., ignore = c("sqlite", "mysql"))
+  test_frame(..., ignore = c("sqlite", "mysql", "MariaDB"))
 }
 
 # Manage cache of testing srcs

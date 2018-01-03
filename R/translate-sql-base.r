@@ -6,9 +6,9 @@ NULL
 
 sql_if <- function(cond, if_true, if_false = NULL) {
   build_sql(
-    "CASE WHEN (", cond, ")",
-    " THEN (", if_true, ")",
-    if (!is.null(if_false)) build_sql(" ELSE (", if_false, ")"),
+    "CASE WHEN (", cond, ")", " THEN (", if_true, ")",
+    if (!is.null(if_false))
+      build_sql(" WHEN NOT(", cond, ") THEN (", if_false, ")"),
     " END"
   )
 }
@@ -76,9 +76,9 @@ base_scalar <- sql_translator(
   floor   = sql_prefix("floor", 1),
   log     = function(x, base = exp(1)) {
     if (isTRUE(all.equal(base, exp(1)))) {
-      build_sql(sql("ln"), list(x))
+      sql_expr(ln(!!x))
     } else {
-      build_sql(sql("log"), list(base, x))
+      sql_expr(log(!!base, !!x))
     }
   },
   log10   = sql_prefix("log10", 1),
@@ -118,12 +118,8 @@ base_scalar <- sql_translator(
     build_sql(x, sql(" DESC"))
   },
 
-  is.null = function(x) {
-    build_sql("((", x, ") IS NULL)")
-  },
-  is.na = function(x) {
-    build_sql("((", x, ") IS NULL)")
-  },
+  is.null = function(x) sql_expr(((!!x) %is% NULL)),
+  is.na = function(x)  sql_expr(((!!x) %is% NULL)),
   na_if = sql_prefix("NULL_IF", 2),
   coalesce = sql_prefix("coalesce"),
 
@@ -142,7 +138,35 @@ base_scalar <- sql_translator(
   pmin = sql_prefix("min"),
   pmax = sql_prefix("max"),
 
-  `%>%` = `%>%`
+  `%>%` = `%>%`,
+
+  # stringr functions
+
+  # SQL Syntax reference links:
+  #   MySQL https://dev.mysql.com/doc/refman/5.7/en/string-functions.html
+  #   Hive: https://cwiki.apache.org/confluence/display/Hive/LanguageManual+UDF#LanguageManualUDF-StringFunctions
+  #   Impala: https://www.cloudera.com/documentation/enterprise/5-9-x/topics/impala_string_functions.html
+  #   PostgreSQL: https://www.postgresql.org/docs/9.1/static/functions-string.html
+  #   MS SQL: https://docs.microsoft.com/en-us/sql/t-sql/functions/string-functions-transact-sql
+  #   Oracle: https://docs.oracle.com/middleware/bidv1221/desktop/BIDVD/GUID-BBA975C7-B2C5-4C94-A007-28775680F6A5.htm#BILUG685
+  str_length      = sql_prefix("LENGTH"),
+  str_to_upper    = sql_prefix("UPPER"),
+  str_to_lower    = sql_prefix("LOWER"),
+  str_replace_all = function(string, pattern, replacement){
+                      build_sql(
+                        "REPLACE(", string, ", ", pattern, ", ", replacement, ")"
+                      )},
+  str_detect      = function(string, pattern){
+                      build_sql(
+                        "INSTR(", pattern, ", ", string, ") > 0"
+                      )},
+  str_trim        = function(string, side = "both"){
+                      build_sql(
+                        sql(ifelse(side == "both" | side == "left", "LTRIM(", "(")),
+                        sql(ifelse(side == "both" | side == "right", "RTRIM(", "(")),
+                        string
+                        ,"))"
+                      )}
 )
 
 base_symbols <- sql_translator(
@@ -157,12 +181,12 @@ base_symbols <- sql_translator(
 base_agg <- sql_translator(
   # SQL-92 aggregates
   # http://db.apache.org/derby/docs/10.7/ref/rrefsqlj33923.html
-  n          = sql_prefix("count"),
-  mean       = sql_prefix("avg", 1),
-  var        = sql_prefix("variance", 1),
-  sum        = sql_prefix("sum", 1),
-  min        = sql_prefix("min", 1),
-  max        = sql_prefix("max", 1),
+  n          = function() sql("COUNT()"),
+  mean       = sql_aggregate("avg"),
+  var        = sql_aggregate("variance"),
+  sum        = sql_aggregate("sum"),
+  min        = sql_aggregate("min"),
+  max        = sql_aggregate("max"),
   n_distinct = function(...) {
     vars <- sql_vector(list(...), parens = FALSE, collapse = ", ")
     build_sql("COUNT(DISTINCT ", vars, ")")
@@ -228,15 +252,18 @@ base_win <- sql_translator(
 
   # Recycled aggregate fuctions take single argument, don't need order and
   # include entire partition in frame.
-  mean  = win_recycled("avg"),
-  var   = win_recycled("variance"),
-  sum   = win_recycled("sum"),
-  min   = win_recycled("min"),
-  max   = win_recycled("max"),
+  mean  = win_aggregate("avg"),
+  var   = win_aggregate("variance"),
+  sum   = win_aggregate("sum"),
+  min   = win_aggregate("min"),
+  max   = win_aggregate("max"),
   n     = function() {
     win_over(sql("COUNT(*)"), win_current_group())
   },
-
+  n_distinct = function(...) {
+    vars <- sql_vector(list(...), parens = FALSE, collapse = ", ")
+    win_over(build_sql("COUNT(DISTINCT ", vars, ")"), win_current_group())
+  },
 
   # Cumulative function are like recycled aggregates except that R names
   # have cum prefix, order_by is inherited and frame goes from -Inf to 0.
@@ -268,6 +295,8 @@ base_no_win <- sql_translator(
   mean         = win_absent("avg"),
   sd           = win_absent("sd"),
   var          = win_absent("var"),
+  cov          = win_absent("cov"),
+  cor          = win_absent("cor"),
   sum          = win_absent("sum"),
   min          = win_absent("min"),
   max          = win_absent("max"),
@@ -282,7 +311,9 @@ base_no_win <- sql_translator(
   last         = win_absent("last_value"),
   lead         = win_absent("lead"),
   lag          = win_absent("lag"),
-  order_by     = win_absent("order_by")
+  order_by     = win_absent("order_by"),
+  str_flatten = win_absent("str_flatten"),
+  count        = win_absent("count")
 )
 
 

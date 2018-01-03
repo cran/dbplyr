@@ -10,20 +10,30 @@ db_desc.MySQLConnection <- function(x) {
 }
 
 #' @export
+db_desc.MariaDBConnection <- db_desc.MySQLConnection
+
+#' @export
 sql_translate_env.MySQLConnection <- function(con) {
   sql_variant(
     sql_translator(.parent = base_scalar,
-      as.character = sql_cast("CHAR")
+      as.character = sql_cast("CHAR"),
+      paste = sql_paste(" "),
+      paste0 = sql_paste("")
     ),
     sql_translator(.parent = base_agg,
-      n = function() sql("count(*)"),
-      sd =  sql_prefix("stddev_samp"),
-      var = sql_prefix("var_samp"),
-      paste = function(x, collapse) build_sql("group_concat(", x, collapse, ")")
+      n = function() sql("COUNT(*)"),
+      sd =  sql_aggregate("stddev_samp"),
+      var = sql_aggregate("var_samp"),
+      str_flatten = function(x, collapse) {
+        sql_expr(group_concat(!!x %separator% !!collapse))
+      }
     ),
     base_no_win
   )
 }
+
+#' @export
+sql_translate_env.MariaDBConnection <- sql_translate_env.MySQLConnection
 
 # DBI methods ------------------------------------------------------------------
 
@@ -33,6 +43,9 @@ db_has_table.MySQLConnection <- function(con, table, ...) {
   # skip any local checks and rely on the database to throw informative errors
   NA
 }
+
+#' @export
+db_has_table.MariaDBConnection <- db_has_table.MySQLConnection
 
 #' @export
 db_data_type.MySQLConnection <- function(con, fields, ...) {
@@ -81,23 +94,19 @@ db_write_table.MySQLConnection <- function(con, table, types, values,
                                            temporary = TRUE, ...) {
   db_create_table(con, table, types, temporary = temporary)
 
-  # Convert factors to strings
-  is_factor <- vapply(values, is.factor, logical(1))
-  values[is_factor] <- lapply(values[is_factor], as.character)
-
-  # Encode special characters in strings
-  is_char <- vapply(values, is.character, logical(1))
-  values[is_char] <- lapply(values[is_char], encodeString, na.encode = FALSE)
+  values <- purrr::modify_if(values, is.logical, as.integer)
+  values <- purrr::modify_if(values, is.factor, as.character)
+  values <- purrr::modify_if(values, is.character, encodeString, na.encode = FALSE)
 
   tmp <- tempfile(fileext = ".csv")
   utils::write.table(values, tmp, sep = "\t", quote = FALSE, qmethod = "escape",
     na = "\\N", row.names = FALSE, col.names = FALSE)
 
   sql <- build_sql("LOAD DATA LOCAL INFILE ", encodeString(tmp), " INTO TABLE ",
-    ident(table), con = con)
+    as.sql(table), con = con)
   dbExecute(con, sql)
 
-  invisible()
+  table
 }
 
 #' @export
@@ -112,15 +121,21 @@ db_create_index.MySQLConnection <- function(con, table, columns, name = NULL,
     con = con
   )
 
-  sql <- build_sql("ALTER TABLE ", ident(table), "\n", index, con = con)
+  sql <- build_sql("ALTER TABLE ", as.sql(table), "\n", index, con = con)
   dbExecute(con, sql)
 }
 
 #' @export
+db_create_index.MariaDBConnection <- db_create_index.MySQLConnection
+
+#' @export
 db_analyze.MySQLConnection <- function(con, table, ...) {
-  sql <- build_sql("ANALYZE TABLE", ident(table), con = con)
+  sql <- build_sql("ANALYZE TABLE", as.sql(table), con = con)
   dbExecute(con, sql)
 }
+
+#' @export
+db_analyze.MariaDBConnection <- db_analyze.MySQLConnection
 
 # SQL methods -------------------------------------------------------------
 
@@ -136,3 +151,5 @@ sql_join.MySQLConnection <- function(con, x, y, vars, type = "inner", by = NULL,
   }
   NextMethod()
 }
+
+globalVariables(c("%separator%", "group_concat"))

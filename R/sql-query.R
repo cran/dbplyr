@@ -36,22 +36,6 @@ select_query <- function(from,
   )
 }
 
-# List clauses used by a query, in the order they are executed in
-select_query_clauses <- function(x) {
-  present <- c(
-    where =    length(x$where) > 0,
-    group_by = length(x$group_by) > 0,
-    having =   length(x$having) > 0,
-    select =   !identical(x$select, sql("*")),
-    distinct = x$distinct,
-    order_by = length(x$order_by) > 0,
-    limit    = !is.null(x$limit)
-  )
-
-  ordered(names(present)[present], levels = names(present))
-}
-
-
 #' @export
 print.select_query <- function(x, ...) {
   cat(
@@ -115,6 +99,10 @@ join_vars <- function(x_names, y_names, type, by, suffix = c(".x", ".y")) {
 }
 
 add_suffixes <- function(x, y, suffix) {
+  if (identical(suffix, "")) {
+    return(x)
+  }
+
   out <- chr_along(x)
   for (i in seq_along(x)) {
     nm <- x[[i]]

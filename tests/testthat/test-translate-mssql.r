@@ -1,146 +1,150 @@
 context("translate-MSSQL")
 
-# MSSQL base_scalar conversions -----------------------------------------
+test_that("custom scalar translated correctly", {
 
-test_that("as.numeric() translated to NUMERIC ", {
-  expect_equivalent(
-    translate_sql(as.numeric(field_name), con = simulate_mssql()),
-    sql("CAST(`field_name` AS NUMERIC)")
-  )
-})
+  trans <- function(x) {
+    translate_sql(!!enquo(x), con = simulate_mssql())
+  }
 
-test_that("as.double() translated to NUMERIC ", {
-  expect_equivalent(
-    translate_sql(as.double(field_name), con = simulate_mssql()),
-    sql("CAST(`field_name` AS NUMERIC)")
-  )
-})
+  expect_equal(trans(as.numeric(x)),   sql("CAST(`x` AS NUMERIC)"))
+  expect_equal(trans(as.double(x)),    sql("CAST(`x` AS NUMERIC)"))
+  expect_equal(trans(as.character(x)), sql("CAST(`x` AS VARCHAR(MAX))"))
+  expect_equal(trans(log(x)),          sql("LOG(`x`)"))
+  expect_equal(trans(nchar(x)),        sql("LEN(`x`)"))
+  expect_equal(trans(atan2(x)),        sql("ATN2(`x`)"))
+  expect_equal(trans(ceiling(x)),      sql("CEILING(`x`)"))
+  expect_equal(trans(ceil(x)),         sql("CEILING(`x`)"))
+  expect_equal(trans(substr(x, 1, 2)), sql("SUBSTRING(`x`, 1.0, 2.0)"))
+  expect_equal(trans(trimws(x)),       sql("LTRIM(RTRIM(`x`))"))
 
-test_that("as.character() translate to VARCHAR(MAX) ", {
-  expect_equivalent(
-  translate_sql(as.character(field_name), con = simulate_mssql()),
-    sql("CAST(`field_name` AS VARCHAR(MAX))")
-  )
-})
-test_that("log() translates to LOG ", {
-  expect_equivalent(
-    translate_sql(log(field_name), con = simulate_mssql()),
-    sql("LOG(`field_name`)")
-  )
-})
-test_that("ceiling() translates to CEILING ", {
-  expect_equivalent(
-    translate_sql(ceiling(field_name), con = simulate_mssql()),
-    sql("CEILING(`field_name`)")
-  )
+  expect_error(trans(paste(x)),        sql("not available"))
+
 })
 
-test_that("paste() returns error message", {
-  expect_error(
-    translate_sql(paste(field_name),
-                  window = FALSE,
-                  con = simulate_mssql()),
-    "PASTE\\(\\) is not available in this SQL variant"
+test_that("custom stringr functions translated correctly", {
+
+  trans <- function(x) {
+    translate_sql(!!enquo(x), con = simulate_mssql())
+  }
+
+  expect_equal(trans(str_length(x)),         sql("LEN(`x`)"))
+  expect_equal(trans(str_locate(x, "find")), sql("CHARINDEX('find', `x`)"))
+  expect_equal(trans(str_detect(x, "find")), sql("CHARINDEX('find', `x`) > 0"))
+
+})
+
+test_that("custom aggregators translated correctly", {
+
+  trans <- function(x) {
+    translate_sql(!!enquo(x), window = FALSE, con = simulate_mssql())
+  }
+
+  expect_equal(trans(sd(x, na.rm = TRUE)),  sql("STDEV(`x`)"))
+  expect_equal(trans(var(x, na.rm = TRUE)), sql("VAR(`x`)"))
+
+  expect_error(trans(cor(x)), "not available")
+  expect_error(trans(cov(x)), "not available")
+})
+
+test_that("custom window functions translated correctly", {
+
+  trans <- function(x) {
+    translate_sql(!!enquo(x), window = TRUE, con = simulate_mssql())
+  }
+
+  expect_equal(trans(sd(x, na.rm = TRUE)),  sql("STDEV(`x`) OVER ()"))
+  expect_equal(trans(var(x, na.rm = TRUE)), sql("VAR(`x`) OVER ()"))
+
+  expect_error(trans(cor(x)), "not supported")
+  expect_error(trans(cov(x)), "not supported")
+})
+
+test_that("filter and mutate translate is.na correctly", {
+  mf <- lazy_frame(x = 1, src = simulate_mssql())
+
+  expect_equal(
+    mf %>% head() %>% show_query(),
+    sql("SELECT  TOP 6 *\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(z = is.na(x)) %>% show_query(),
+    sql("SELECT `x`, CONVERT(BIT, IIF(`x` IS NULL, 1, 0)) AS `z`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(z = !is.na(x)) %>% show_query(),
+    sql("SELECT `x`, ~(CONVERT(BIT, IIF(`x` IS NULL, 1, 0))) AS `z`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% filter(is.na(x)) %>% show_query(),
+    sql("SELECT *\nFROM `df`\nWHERE (((`x`) IS NULL))")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x == 1) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` = 1.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x != 1) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` != 1.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x > 1) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` > 1.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x >= 1) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` >= 1.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = !(x == 1)) %>% show_query(),
+    sql("SELECT ~((CONVERT(BIT, IIF(`x` = 1.0, 1.0, 0.0)))) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = !(x != 1)) %>% show_query(),
+    sql("SELECT ~((CONVERT(BIT, IIF(`x` != 1.0, 1.0, 0.0)))) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = !(x > 1)) %>% show_query(),
+    sql("SELECT ~((CONVERT(BIT, IIF(`x` > 1.0, 1.0, 0.0)))) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = !(x >= 1)) %>% show_query(),
+    sql("SELECT ~((CONVERT(BIT, IIF(`x` >= 1.0, 1.0, 0.0)))) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x > 4 & x < 5) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` > 4.0, 1.0, 0.0)) & CONVERT(BIT, IIF(`x` < 5.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% filter(x > 4 & x < 5) %>% show_query(),
+    sql("SELECT *\nFROM `df`\nWHERE (`x` > 4.0 AND `x` < 5.0)")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = x > 4 | x < 5) %>% show_query(),
+    sql("SELECT CONVERT(BIT, IIF(`x` > 4.0, 1.0, 0.0)) | CONVERT(BIT, IIF(`x` < 5.0, 1.0, 0.0)) AS `x`\nFROM `df`")
+  )
+
+  expect_equal(
+    mf %>% filter(x > 4 | x < 5) %>% show_query(),
+    sql("SELECT *\nFROM `df`\nWHERE (`x` > 4.0 OR `x` < 5.0)")
+  )
+
+  expect_equal(
+    mf %>% mutate(x = ifelse(x == 0, 0 ,1)) %>% show_query(),
+    sql("SELECT CASE WHEN ((CONVERT(BIT, IIF(`x` = 0.0, 1.0, 0.0))) =  'TRUE') THEN (0.0) WHEN ((CONVERT(BIT, IIF(`x` = 0.0, 1.0, 0.0))) =  'FALSE') THEN (1.0) END AS `x`\nFROM `df`")
   )
 })
 
-# MSSQL base_agg conversions -----------------------------------------
-
-test_that("sd() translates to STDEV ", {
-  expect_equivalent(
-    translate_sql(sd(field_name),
-                  window = FALSE,
-                  con = simulate_mssql()),
-    sql("STDEV(`field_name`)")
-  )
-})
-
-test_that("var() translates to VAR ", {
-  expect_equivalent(
-    translate_sql(var(field_name),
-                  window = FALSE,
-                  con = simulate_mssql()),
-    sql("VAR(`field_name`)")
-  )
-})
-
-test_that("cor() returns error message", {
-  expect_error(
-    translate_sql(cor(field_name),
-                  window = FALSE,
-                  con = simulate_mssql()),
-    "COR\\(\\) is not available in this SQL variant"
-  )
-})
-
-test_that("cov() returns error message", {
-  expect_error(
-    translate_sql(cov(field_name),
-                  window = FALSE,
-                  con = simulate_mssql()),
-    "COV\\(\\) is not available in this SQL variant"
-  )
-})
-
-#nchar, atan2, substr, ceil, is.null, is.na, trimws
-
-test_that("nchar() translates to LEN ", {
-  expect_equivalent(
-    translate_sql(nchar(field_name),
-                  con = simulate_mssql()),
-    sql("LEN(`field_name`)")
-  )
-})
-test_that("atan2() translates to ATN2 ", {
-  expect_equivalent(
-    translate_sql(atan2(field_name),
-                  con = simulate_mssql()),
-    sql("ATN2(`field_name`)")
-  )
-})
-test_that("substr() translates to SUBSTRING ", {
-  expect_equivalent(
-    translate_sql(substr(field_name, 1, 2),
-                  con = simulate_mssql()),
-    sql("SUBSTRING(`field_name`, 1.0, 2.0)")
-  )
-})
-test_that("ceil() translates to CEILING ", {
-  expect_equivalent(
-    translate_sql(ceil(field_name),
-                  con = simulate_mssql()),
-    sql("CEILING(`field_name`)")
-  )
-})
-test_that("is.null() translates to CASE-WHEN statement ", {
-  expect_equivalent(
-    translate_sql(is.null(field_name),
-                  con = simulate_mssql()),
-    sql("CASE WHEN `field_name` IS NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END")
-  )
-})
-test_that("is.na() translates to CASE-WHEN statement ", {
-  expect_equivalent(
-    translate_sql(is.na(field_name),
-                  con = simulate_mssql()),
-    sql("CASE WHEN `field_name` IS NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END")
-  )
-})
-test_that("trimws() translates to LTRIM-RTRIM ", {
-  expect_equivalent(
-    translate_sql(trimws(field_name),
-                  con = simulate_mssql()),
-    sql("LTRIM(RTRIM(`field_name`))")
-  )
-})
-
-
-# MSSQL query tests  ------------------------------------------------
-
-df <- data.frame(x = 1, y = 2)
-df_mssql <- tbl_lazy(df, src = simulate_mssql())
-test_that("query uses TOP instead of LIMIT ", {
-  expect_equivalent(
-    show_query(head(df_mssql)),
-    sql("SELECT  TOP 6 *\nFROM `df`"))
-})

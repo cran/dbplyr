@@ -33,22 +33,30 @@
 #' # postgresql provides: http://bit.ly/K5EdTn
 #'
 #' postgres_agg <- sql_translator(.parent = base_agg,
-#'   cor = sql_prefix("corr"),
-#'   cov = sql_prefix("covar_samp"),
-#'   sd =  sql_prefix("stddev_samp"),
-#'   var = sql_prefix("var_samp")
+#'   cor = sql_aggregate_2("corr"),
+#'   cov = sql_aggregate_2("covar_samp"),
+#'   sd =  sql_aggregate("stddev_samp"),
+#'   var = sql_aggregate("var_samp")
 #' )
 #' postgres_var <- sql_variant(
 #'   base_scalar,
-#'   postgres_agg
+#'   postgres_agg,
+#'   base_no_win
 #' )
 #'
-#' translate_sql(cor(x, y), variant = postgres_var)
-#' translate_sql(sd(income / years), variant = postgres_var)
+#' # Next we have to simulate a connection that uses this variant
+#' con <- structure(
+#'   list(),
+#'   class = c("TestCon", "DBITestConnection", "DBIConnection")
+#' )
+#' sql_translate_env.TestCon <- function(x) postgres_var
+#'
+#' translate_sql(cor(x, y), con = con, window = FALSE)
+#' translate_sql(sd(income / years), con = con, window = FALSE)
 #'
 #' # Any functions not explicitly listed in the converter will be translated
 #' # to sql as is, so you don't need to convert all functions.
-#' translate_sql(regr_intercept(y, x), variant = postgres_var)
+#' translate_sql(regr_intercept(y, x), con = con)
 sql_variant <- function(scalar = sql_translator(),
                         aggregate = sql_translator(),
                         window = sql_translator()) {
@@ -58,10 +66,10 @@ sql_variant <- function(scalar = sql_translator(),
 
   # Need to check that every function in aggregate also occurs in window
   missing <- setdiff(ls(aggregate), ls(window))
-  if (length(missing) > 1) {
+  if (length(missing) > 0) {
     warn(paste0(
-      "Translator is missing window functions:\n",
-      paste0(missing, collapse = ", ")
+      "Translator is missing window variants of the following aggregate functions:\n",
+      paste0("* ", missing, "\n", collapse = "")
     ))
   }
 
@@ -133,11 +141,7 @@ sql_prefix <- function(f, n = NULL) {
   assert_that(is_string(f))
 
   f <- toupper(f)
-  function(..., na.rm) {
-    if (!missing(na.rm)) {
-      message("na.rm not needed in SQL: NULL are always dropped", call. = FALSE)
-    }
-
+  function(...) {
     args <- list(...)
     if (!is.null(n) && length(args) != n) {
       stop(
@@ -154,6 +158,42 @@ sql_prefix <- function(f, n = NULL) {
 
 #' @rdname sql_variant
 #' @export
+sql_aggregate <- function(f) {
+  assert_that(is_string(f))
+  f <- toupper(f)
+
+  function(x, na.rm = FALSE) {
+    check_na_rm(f, na.rm)
+    build_sql(sql(f), list(x))
+  }
+}
+
+#' @rdname sql_variant
+#' @export
+sql_aggregate_2 <- function(f) {
+  assert_that(is_string(f))
+  f <- toupper(f)
+
+  function(x, y) {
+    build_sql(sql(f), list(x, y))
+  }
+}
+
+
+check_na_rm <- function(f, na.rm) {
+  if (identical(na.rm, TRUE)) {
+    return()
+  }
+
+  warning(
+    "Missing values are always removed in SQL.\n",
+    "Use `", f, "(x, na.rm = TRUE)` to silence this warning",
+    call. = FALSE
+  )
+}
+
+#' @rdname sql_variant
+#' @export
 sql_not_supported <- function(f) {
   assert_that(is_string(f))
 
@@ -166,7 +206,31 @@ sql_not_supported <- function(f) {
 #' @rdname sql_variant
 #' @export
 sql_cast <- function(type) {
+  type <- sql(type)
   function(x) {
-    build_sql("CAST(", x, " AS ", sql(type), ")")
+    sql_expr(cast(UQ(x) %as% UQ(type)))
   }
 }
+
+#' @rdname sql_variant
+#' @export
+sql_log <- function() {
+  function(x, base = exp(1)){
+    if (isTRUE(all.equal(base, exp(1)))) {
+      sql_expr(ln(!!x))
+    } else {
+      sql_expr(log(!!x) / log(!!base))
+    }
+  }
+}
+
+
+#' @rdname sql_variant
+#' @export
+sql_cot <- function(){
+  function(x){
+    sql_expr(1L / tan(!!x))
+  }
+}
+
+globalVariables(c("%as%", "cast", "ln"))

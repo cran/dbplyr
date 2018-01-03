@@ -15,6 +15,8 @@ tbl_lazy <- function(df, src = NULL) {
   make_tbl("lazy", ops = op_base_local(df), src = src)
 }
 
+setOldClass(c("tbl_lazy", "tbl"))
+
 #' @export
 #' @rdname tbl_lazy
 lazy_frame <- function(..., src = NULL) {
@@ -106,6 +108,7 @@ rename_.tbl_lazy <- function(.data, ..., .dots = list()) {
 #' @export
 summarise.tbl_lazy <- function(.data, ...) {
   dots <- quos(..., .named = TRUE)
+  dots <- partial_eval(dots, vars = op_vars(.data))
   add_op_single("summarise", .data, dots = dots)
 }
 #' @export
@@ -122,21 +125,23 @@ mutate.tbl_lazy <- function(.data, ..., .dots = list()) {
 
   # For each expression, check if it uses any newly created variables.
   # If so, nest the mutate()
-  used_vars <- lapply(dots, function(x) all_names(get_expr(x)))
-
+  new_vars <- character()
   init <- 0L
   for (i in seq_along(dots)) {
-    cur_idx <- inc_seq(init + 1L, i - 1L)
-    new_vars <- names(dots)[cur_idx]
+    cur_var <- names(dots)[[i]]
+    used_vars <- all_names(get_expr(dots[[i]]))
 
-    if (any(used_vars[[i]] %in% new_vars)) {
-      .data <- add_op_single("mutate", .data, dots = dots[cur_idx])
+    if (any(used_vars %in% new_vars)) {
+      .data <- add_op_single("mutate", .data, dots = dots[new_vars])
+      new_vars <- cur_var
       init <- i
+    } else {
+      new_vars <- c(new_vars, cur_var)
     }
   }
 
   if (init != 0L) {
-    dots <- dots[-inc_seq(1L, init - 1)]
+    dots <- dots[-seq2(1L, init - 1)]
   }
   add_op_single("mutate", .data, dots = dots)
 }
@@ -175,7 +180,12 @@ group_by_.tbl_lazy <- function(.data, ..., .dots = list(), add = FALSE) {
 
 #' @export
 head.tbl_lazy <- function(x, n = 6L, ...) {
-  add_op_single("head", x, args = list(n = n))
+  if (inherits(x$ops, "op_head")) {
+    x$ops$args$n <- min(x$ops$args$n, n)
+  } else {
+    x$ops <- op_single("head", x = x$ops, dots = dots, args = list(n = n))
+  }
+  x
 }
 
 #' @export
@@ -201,9 +211,17 @@ distinct_.tbl_lazy <- function(.data, ..., .dots = list(), .keep_all = FALSE) {
 add_op_join <- function(x, y, type, by = NULL, copy = FALSE,
                         suffix = c(".x", ".y"),
                         auto_index = FALSE, ...) {
-  by <- common_by(by, x, y)
+
+  if (identical(type, "full") && identical(by, character())) {
+    type <- "cross"
+    by <- list(x = character(0), y = character(0))
+  } else {
+    by <- common_by(by, x, y)
+  }
+
   y <- auto_copy(
-    x, y, copy,
+    x, y,
+    copy = copy,
     indexes = if (auto_index) list(by$y)
   )
 

@@ -16,17 +16,17 @@ sql_select.Oracle<- function(con, select, from, where = NULL,
   out$having    <- sql_clause_having(having, con)
   out$order_by  <- sql_clause_order_by(order_by, con)
 
-  # Using Oracle's FETCH FIRST SQL command instead of LIMIT
-  # https://oracle-base.com/articles/12c/row-limiting-clause-for-top-n-queries-12cr1
+  # Processing limit via ROWNUM in a WHERE clause, thie method
+  # is backwards & forward compatible: https://oracle-base.com/articles/misc/top-n-queries
   if (!is.null(limit) && !identical(limit, Inf)) {
+    out <- escape(unname(compact(out)), collapse = "\n", parens = FALSE, con = con)
     assertthat::assert_that(is.numeric(limit), length(limit) == 1L, limit > 0)
-    out$limit <- build_sql(
-      "FETCH FIRST ", sql(format(trunc(limit), scientific = FALSE)), " ROWS ONLY ",
-      con = con
-    )
+    out <- build_sql(
+      "SELECT * FROM ", sql_subquery(con, out), " WHERE ROWNUM <= ", limit,
+      con = con)
+  }else{
+    escape(unname(compact(out)), collapse = "\n", parens = FALSE, con = con)
   }
-
-  escape(unname(compact(out)), collapse = "\n", parens = FALSE, con = con)
 }
 
 
@@ -38,15 +38,7 @@ sql_translate_env.Oracle <- function(con) {
       # https://docs.oracle.com/cd/B19306_01/server.102/b14200/sql_elements001.htm
       as.character  = sql_cast("VARCHAR(255)"),
       as.numeric    = sql_cast("NUMBER"),
-      as.double     = sql_cast("NUMBER"),
-      is.null       = function(x){
-                        build_sql(
-                          "CASE WHEN", x ," IS NULL THEN 1 ELSE 0 END "
-                        )},
-      is.na         = function(x){
-                        build_sql(
-                          "CASE WHEN", x ," IS NULL THEN 1 ELSE 0 END "
-                        )}
+      as.double     = sql_cast("NUMBER")
     ),
     base_odbc_agg,
     base_odbc_win
@@ -55,11 +47,12 @@ sql_translate_env.Oracle <- function(con) {
 
 #' @export
 db_analyze.Oracle <- function(con, table, ...) {
+  # https://docs.oracle.com/cd/B19306_01/server.102/b14200/statements_4005.htm
   sql <- dbplyr::build_sql(
-    # Using ANALYZE TABLE instead of ANALYZE as recommended in this article: https://docs.oracle.com/cd/B28359_01/server.111/b28310/general002.htm#ADMIN11524
     "ANALYZE TABLE ",
-    ident(table)
-    , con = con)
+    as.sql(table),
+    " COMPUTE STATISTICS",
+    con = con)
   DBI::dbExecute(con, sql)
 }
 
@@ -67,7 +60,7 @@ db_analyze.Oracle <- function(con, table, ...) {
 sql_subquery.Oracle <- function(con, from, name = unique_name(), ...) {
   # Table aliases in Oracle should not have an "AS": https://www.techonthenet.com/oracle/alias.php
   if (is.ident(from)) {
-    build_sql("(", from, ") ", if(!is.null(name))ident(name) , con = con)
+    build_sql("(", from, ") ", if(!is.null(name)) ident(name) , con = con)
   } else {
     build_sql("(", from, ") ", ident(name %||% random_table_name()), con = con)
   }

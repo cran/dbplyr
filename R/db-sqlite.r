@@ -19,14 +19,17 @@ sql_translate_env.SQLiteConnection <- function(con) {
     sql_translator(.parent = base_scalar,
       log     = function(x, base = exp(1)) {
         if (base != exp(1)) {
-          build_sql("log(", x, ") / log(", base, ")")
+          sql_expr(log(!!x) / log(!!base))
         } else {
-          build_sql("log(", x, ")")
+          sql_expr(log(!!x))
         }
-      }
+      },
+      na_if = sql_prefix("NULLIF", 2),
+      paste = sql_paste_infix(" ", "||", function(x) sql_expr(cast(UQ(x) %as% text))),
+      paste0 = sql_paste_infix("", "||", function(x) sql_expr(cast(UQ(x) %as% text)))
     ),
     sql_translator(.parent = base_agg,
-      sd = sql_prefix("stdev")
+      sd = sql_aggregate("stdev")
     ),
     base_no_win
   )
