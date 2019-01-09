@@ -30,5 +30,10 @@ sql_subquery.OraConnection <- function(con, from, name = unique_name(), ...) {
 
 #' @export
 db_drop_table.OraConnection <- function(con, table, force = FALSE, ...) {
-  db_drop_table.OdbcConnection(con = con, table = table, force = force, ...)
+  db_drop_table.Oracle(con = con, table = table, force = force, ...)
+}
+
+# registered onLoad located in the zzz.R script
+setdiff.OraConnection<- function(x, y, copy = FALSE, ...) {
+  setdiff.tbl_Oracle(x = x, y = y, copy = copy, ...)
 }
