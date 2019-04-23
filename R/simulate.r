@@ -1,99 +1,69 @@
-simulate_test <- function() {
-  structure(list(), class = c("DBITestConnection", "DBIConnection"))
+#' Simulate database connections
+#'
+#' These functions generate S3 objects that have been designed to simulate
+#' the action of a database connection, without actually having the database
+#' available. Obviously, this simulation can only be incomplete, but most
+#' importantly it allows us to simulate SQL generation for any database without
+#' actually connecting to it.
+#'
+#' Simulated SQL always quotes identifies with `` `x` ``, and strings with
+#' `'x'`.
+#'
+#' @keywords internal
+#' @export
+simulate_dbi <- function(class = character()) {
+  structure(
+    list(),
+    class = c(class, "TestConnection", "DBIConnection")
+  )
 }
 
-db_query_fields.DBITestConnection <- function(con, sql, ...) {
-  c("field1")
-}
-
-sql_escape_ident.DBITestConnection <- function(con, x) {
+# Needed to work around fundamental hackiness of how I'm mingling
+# S3 and S4 dispatch
+sql_escape_ident.TestConnection <- function(con, x) {
   sql_quote(x, "`")
 }
 
-sql_escape_string.DBITestConnection <- function(con, x) {
+sql_escape_string.TestConnection <- function(con, x) {
   sql_quote(x, "'")
 }
 
 #' @export
-sql_subquery.DBITestConnection <- function(con, from, name = unique_name(), ...) {
-  if (is.ident(from)) {
-    setNames(from, name)
-  } else {
-    build_sql("(", from, ") ", ident(name %||% random_table_name()), con = con)
-  }
-}
-
-# DBI connections --------------------------------------------------------------
+#' @rdname simulate_dbi
+simulate_access <- function() simulate_dbi("ACCESS")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_dbi <- function() {
-  structure(
-    list(),
-    class = "DBIConnection"
-  )
-}
+#' @rdname simulate_dbi
+simulate_hive <- function() simulate_dbi("Hive")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_sqlite <- function() {
-  structure(
-    list(),
-    class = c("SQLiteConnection", "DBIConnection")
-  )
-}
+#' @rdname simulate_dbi
+simulate_mysql <- function() simulate_dbi("MySQLConnection")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_postgres <- function() {
-  structure(
-    list(),
-    class = c("PostgreSQLConnection", "DBIConnection")
-  )
-}
+#' @rdname simulate_dbi
+simulate_impala <- function() simulate_dbi("Impala")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_mysql <- function() {
-  structure(
-    list(),
-    class = c("MySQLConnection", "DBIConnection")
-  )
-}
+#' @rdname simulate_dbi
+simulate_mssql <- function() simulate_dbi("Microsoft SQL Server")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_odbc <- function(type = NULL) {
-  structure(
-    list(),
-    class = c(type, "DBITestConnection", "DBIConnection")
-  )
-}
+#' @rdname simulate_dbi
+simulate_odbc <- function() simulate_dbi("OdbcConnection")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_impala <- function() simulate_odbc("Impala")
+#' @rdname simulate_dbi
+simulate_oracle <- function() simulate_dbi("Oracle")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_mssql <- function() simulate_odbc("Microsoft SQL Server")
+#' @rdname simulate_dbi
+simulate_postgres <- function() simulate_dbi("PostgreSQLConnection")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_oracle <- function() simulate_odbc("Oracle")
+#' @rdname simulate_dbi
+simulate_sqlite <- function() simulate_dbi("SQLiteConnection")
 
 #' @export
-#' @rdname tbl_lazy
-simulate_hive <- function() simulate_odbc("Hive")
-
-#' @export
-#' @rdname tbl_lazy
-simulate_odbc_postgresql <- function() simulate_odbc("PostgreSQL")
-
-#' @export
-#' @rdname tbl_lazy
-simulate_teradata <- function() simulate_odbc("Teradata")
-
-#' @export
-#' @rdname tbl_lazy
-simulate_odbc_access <- function() simulate_odbc("ACCESS")
+#' @rdname simulate_dbi
+simulate_teradata <- function() simulate_dbi("Teradata")

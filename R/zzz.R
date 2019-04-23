@@ -1,3 +1,4 @@
+# nocov start
 .onLoad <- function(...) {
   register_s3_method("dplyr", "union", "tbl_lazy")
   register_s3_method("dplyr", "intersect", "tbl_lazy")
@@ -5,6 +6,10 @@
   register_s3_method("dplyr", "setdiff", "tbl_Oracle")
   register_s3_method("dplyr", "setdiff", "OraConnection")
   register_s3_method("dplyr", "filter", "tbl_lazy")
+
+  if (utils::packageVersion("dplyr") >= "0.8.0.9008") {
+    register_s3_method("dplyr", "group_by_drop_default", "tbl_lazy")
+  }
 
   # These are also currently defined in dplyr, and we want to avoid a warning
   # about double duplication. Conditional can be removed after update to
@@ -37,4 +42,4 @@ register_s3_method <- function(pkg, generic, class, fun = NULL) {
     }
   )
 }
-
+# nocov end

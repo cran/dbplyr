@@ -1,7 +1,3 @@
-dots <- function(...) {
-  eval_bare(substitute(alist(...)))
-}
-
 deparse_trunc <- function(x, width = getOption("width")) {
   text <- deparse(x, width.cutoff = width)
   if (length(text) == 1 && nchar(text) < width) return(text)
@@ -9,37 +5,13 @@ deparse_trunc <- function(x, width = getOption("width")) {
   paste0(substr(text[1], 1, width - 3), "...")
 }
 
-all_apply <- function(xs, f) {
-  for (x in xs) {
-    if (!f(x)) return(FALSE)
-  }
-  TRUE
-}
-
-any_apply <- function(xs, f) {
-  for (x in xs) {
-    if (f(x)) return(TRUE)
-  }
-  FALSE
-}
-
-drop_last <- function(x) {
-  if (length(x) <= 1L) return(NULL)
-  x[-length(x)]
-}
-
 is.wholenumber <- function(x) {
   trunc(x) == x
 }
 
 deparse_all <- function(x) {
-  x <- map_if(x, is_formula, f_rhs)
-  map_chr(x, expr_text, width = 500L)
-}
-
-deparse_names <- function(x) {
-  x <- map_if(x, is_formula, f_rhs)
-  map_chr(x, deparse)
+  x <- purrr::map_if(x, is_formula, f_rhs)
+  purrr::map_chr(x, expr_text, width = 500L)
 }
 
 #' Provides comma-separated string out ot the parameters
@@ -47,7 +19,7 @@ deparse_names <- function(x) {
 #' @keywords internal
 #' @param ... Arguments to be constructed into the string
 named_commas <- function(...) {
-  x <- c(...)
+  x <- unlist(purrr::map(list2(...), as.character))
   if (is_null(names(x))) {
     paste0(x, collapse = ", ")
   } else {
@@ -58,15 +30,6 @@ named_commas <- function(...) {
 commas <- function(...) paste0(..., collapse = ", ")
 
 in_travis <- function() identical(Sys.getenv("TRAVIS"), "true")
-
-named <- function(...) {
-  x <- c(...)
-
-  missing_names <- names2(x) == ""
-  names(x)[missing_names] <- x[missing_names]
-
-  x
-}
 
 unique_name <- local({
   i <- 0
@@ -104,6 +67,4 @@ c_character <- function(...) {
   x
 }
 
-old_qq <- function() {
-  utils::packageVersion("rlang") <= "0.1.6"
-}
+cat_line <- function(...) cat(paste0(..., "\n"), sep = "")

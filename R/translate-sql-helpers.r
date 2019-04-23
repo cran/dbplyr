@@ -23,6 +23,7 @@
 #'   Defaults to `base_agg` which provides a standard set of
 #'   mappings for the most common operators and functions.
 #' @param f the name of the sql function as a string
+#' @param f_r the name of the r function being translated as a string
 #' @param n for `sql_infix()`, an optional number of arguments to expect.
 #'   Will signal error if not correct.
 #' @seealso [sql()] for an example of a more customised sql
@@ -33,23 +34,21 @@
 #' # postgresql provides: http://bit.ly/K5EdTn
 #'
 #' postgres_agg <- sql_translator(.parent = base_agg,
-#'   cor = sql_aggregate_2("corr"),
-#'   cov = sql_aggregate_2("covar_samp"),
-#'   sd =  sql_aggregate("stddev_samp"),
-#'   var = sql_aggregate("var_samp")
-#' )
-#' postgres_var <- sql_variant(
-#'   base_scalar,
-#'   postgres_agg,
-#'   base_no_win
+#'   cor = sql_aggregate_2("CORR"),
+#'   cov = sql_aggregate_2("COVAR_SAMP"),
+#'   sd =  sql_aggregate("STDDEV_SAMP", "sd"),
+#'   var = sql_aggregate("VAR_SAMP", "var")
 #' )
 #'
 #' # Next we have to simulate a connection that uses this variant
-#' con <- structure(
-#'   list(),
-#'   class = c("TestCon", "DBITestConnection", "DBIConnection")
-#' )
-#' sql_translate_env.TestCon <- function(x) postgres_var
+#' con <- simulate_dbi("TestCon")
+#' sql_translate_env.TestCon <- function(x) {
+#'   sql_variant(
+#'     base_scalar,
+#'     postgres_agg,
+#'     base_no_win
+#'   )
+#' }
 #'
 #' translate_sql(cor(x, y), con = con, window = FALSE)
 #' translate_sql(sd(income / years), con = con, window = FALSE)
@@ -72,6 +71,11 @@ sql_variant <- function(scalar = sql_translator(),
       paste0("* ", missing, "\n", collapse = "")
     ))
   }
+
+  # An ensure that every window function is flagged in aggregate context
+  missing <- setdiff(ls(window), ls(aggregate))
+  missing_funs <- lapply(missing, sql_aggregate_win)
+  env_bind(aggregate, !!!set_names(missing_funs, missing))
 
   structure(
     list(scalar = scalar, aggregate = aggregate, window = window),
@@ -114,7 +118,7 @@ names.sql_variant <- function(x) {
 #' @rdname sql_variant
 sql_translator <- function(..., .funs = list(),
                            .parent = new.env(parent = emptyenv())) {
-  funs <- c(list(...), .funs)
+  funs <- c(list2(...), .funs)
   if (length(funs) == 0) return(.parent)
 
   list2env(funs, copy_env(.parent))
@@ -125,13 +129,19 @@ copy_env <- function(from, to = NULL, parent = parent.env(from)) {
 }
 
 #' @rdname sql_variant
+#' @param pad If `TRUE`, the default, pad the infix operator with spaces.
 #' @export
-sql_infix <- function(f) {
+sql_infix <- function(f, pad = TRUE) {
   assert_that(is_string(f))
 
-  f <- toupper(f)
-  function(x, y) {
-    build_sql(x, " ", sql(f), " ", y)
+  if (pad) {
+    function(x, y) {
+      build_sql(x, " ", sql(f), " ", y)
+    }
+  } else {
+    function(x, y) {
+      build_sql(x, sql(f), y)
+    }
   }
 }
 
@@ -140,7 +150,6 @@ sql_infix <- function(f) {
 sql_prefix <- function(f, n = NULL) {
   assert_that(is_string(f))
 
-  f <- toupper(f)
   function(...) {
     args <- list(...)
     if (!is.null(n) && length(args) != n) {
@@ -158,12 +167,12 @@ sql_prefix <- function(f, n = NULL) {
 
 #' @rdname sql_variant
 #' @export
-sql_aggregate <- function(f) {
+sql_aggregate <- function(f, f_r = f) {
   assert_that(is_string(f))
-  f <- toupper(f)
 
+  warned <- FALSE
   function(x, na.rm = FALSE) {
-    check_na_rm(f, na.rm)
+    warned <<- check_na_rm(f_r, na.rm, warned)
     build_sql(sql(f), list(x))
   }
 }
@@ -172,24 +181,35 @@ sql_aggregate <- function(f) {
 #' @export
 sql_aggregate_2 <- function(f) {
   assert_that(is_string(f))
-  f <- toupper(f)
 
   function(x, y) {
     build_sql(sql(f), list(x, y))
   }
 }
 
+sql_aggregate_win <- function(f) {
+  force(f)
 
-check_na_rm <- function(f, na.rm) {
-  if (identical(na.rm, TRUE)) {
-    return()
+  function(...) {
+    stop(
+      "`", f, "()` is only available in a windowed (`mutate()`) context",
+      call. = FALSE
+    )
+  }
+}
+
+check_na_rm <- function(f, na.rm, warned) {
+  if (warned || identical(na.rm, TRUE)) {
+    return(warned)
   }
 
   warning(
     "Missing values are always removed in SQL.\n",
-    "Use `", f, "(x, na.rm = TRUE)` to silence this warning",
+    "Use `", f, "(x, na.rm = TRUE)` to silence this warning\n",
+    "This warning is displayed only once per session.",
     call. = FALSE
   )
+  TRUE
 }
 
 #' @rdname sql_variant
@@ -197,7 +217,6 @@ check_na_rm <- function(f, na.rm) {
 sql_not_supported <- function(f) {
   assert_that(is_string(f))
 
-  f <- toupper(f)
   function(...) {
     stop(f, " is not available in this SQL variant", call. = FALSE)
   }
@@ -208,7 +227,7 @@ sql_not_supported <- function(f) {
 sql_cast <- function(type) {
   type <- sql(type)
   function(x) {
-    sql_expr(cast(UQ(x) %as% UQ(type)))
+    sql_expr(cast(!!x %as% !!type))
   }
 }
 

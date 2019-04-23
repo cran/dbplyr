@@ -14,10 +14,14 @@ sql <- function(...) {
 
 # See setOldClass definition in zzz.R
 
+# c() is also called outside of the dbplyr context so must supply default
+# connection - this seems like a design mistake, and probably an indication
+# that within dbplyr c() should be replace with a more specific function
 #' @export
-c.sql <- function(..., drop_null = FALSE, con = NULL) {
+c.sql <- function(..., drop_null = FALSE, con = simulate_dbi()) {
   input <- list(...)
-  if (drop_null) input <- compact(input)
+
+  if (drop_null) input <- purrr::compact(input)
 
   out <- unlist(lapply(input, escape, collapse = NULL, con = con))
   sql(out)
@@ -42,7 +46,11 @@ format.sql <- function(x, ...) {
   if (length(x) == 0) {
     paste0("<SQL> [empty]")
   } else {
-    paste0("<SQL> ", x)
+    if (!is.null(names(x))) {
+      paste0("<SQL> ", paste0(x, " AS ", names(x)))
+    } else {
+      paste0("<SQL> ", x)
+    }
   }
 }
 

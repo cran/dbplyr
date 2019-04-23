@@ -1,21 +1,10 @@
-context("tbl_sql")
-
-test_that("can generate sql tbls with raw sql", {
-  mf1 <- memdb_frame(x = 1:3, y = 3:1)
-  mf2 <- tbl(mf1$src, build_sql("SELECT * FROM ", mf1$ops$x))
-
-  expect_equal(collect(mf1), collect(mf2))
-})
+context("test-tbl_sql.R")
 
 test_that("tbl_sql() works with string argument", {
-  name <- unclass(random_table_name())
+  name <- unclass(unique_table_name())
   df <- memdb_frame(a = 1, .name = name)
 
   expect_equal(collect(tbl_sql("sqlite", df$src, name)), collect(df))
-})
-
-test_that("memdb_frame() returns visible output", {
-  expect_true(withVisible(memdb_frame(a = 1))$visible)
 })
 
 test_that("head/print respects n" ,{
@@ -37,25 +26,6 @@ test_that("head/print respects n" ,{
   )
 })
 
-test_that("db_write_table calls dbQuoteIdentifier on table name" ,{
-  idents <- character()
-
-  setClass("DummyDBIConnection", representation("DBIConnection"))
-  setMethod("dbQuoteIdentifier", c("DummyDBIConnection", "character"),
-    function(conn, x, ...) {
-      idents <<- c(idents, x)
-    }
-  )
-
-  setMethod("dbWriteTable", c("DummyDBIConnection", "character", "ANY"),
-    function(conn, name, value, ...) {TRUE}
-  )
-
-  dummy_con <- new("DummyDBIConnection")
-  db_write_table(dummy_con, "somecrazytablename", NA, NA)
-  expect_true("somecrazytablename" %in% idents)
-})
-
 test_that("same_src distinguishes srcs", {
   src1 <- src_sqlite(":memory:", create = TRUE)
   src2 <- src_sqlite(":memory:", create = TRUE)
@@ -70,19 +40,77 @@ test_that("same_src distinguishes srcs", {
   expect_false(same_src(db1, mtcars))
 })
 
-test_that("can copy to from remote sources", {
-  df <- data.frame(x = 1:10)
-  con1 <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con1))
-  df_1 <- copy_to(con1, df, "df1")
+# tbl ---------------------------------------------------------------------
 
-  # Create from tbl in same database
-  df_2 <- copy_to(con1, df_1, "df2")
-  expect_equal(collect(df_2), df)
+test_that("can generate sql tbls with raw sql", {
+  mf1 <- memdb_frame(x = 1:3, y = 3:1)
+  mf2 <- tbl(mf1$src, build_sql("SELECT * FROM ", mf1$ops$x, con = simulate_dbi()))
 
-  # Create from tbl in another data
-  con2 <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
-  on.exit(DBI::dbDisconnect(con2))
-  df_3 <- copy_to(con2, df_1, "df3")
-  expect_equal(collect(df_3), df)
+  expect_equal(collect(mf1), collect(mf2))
+})
+
+test_that("can refer to default schema explicitly", {
+  con <- sqlite_con_with_aux()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE t1 (x)")
+
+  expect_equal(tbl_vars(tbl(con, "t1")), "x")
+  expect_equal(tbl_vars(tbl(con, in_schema("main", "t1"))), "x")
+})
+
+test_that("can distinguish 'schema.table' from 'schema'.'table'", {
+  con <- sqlite_con_with_aux()
+  on.exit(DBI::dbDisconnect(con))
+  DBI::dbExecute(con, "CREATE TABLE aux.t1 (x, y, z)")
+  DBI::dbExecute(con, "CREATE TABLE 'aux.t1' (a, b, c)")
+
+  expect_equal(tbl_vars(tbl(con, in_schema("aux", "t1"))), c("x", "y", "z"))
+  expect_equal(tbl_vars(tbl(con, ident("aux.t1"))), c("a", "b", "c"))
+})
+
+# n_groups ----------------------------------------------------------------
+
+# Data for the first three test_that groups below
+df <- data.frame(x = rep(1:3, each = 10), y = rep(1:6, each = 5))
+# MariaDB returns bit64 instead of int, which makes testing hard
+tbls <- test_load(df, ignore = "MariaDB")
+
+test_that("ungrouped data has 1 group, with group size = nrow()", {
+  for (tbl in tbls) {
+    expect_equal(n_groups(tbl), 1L)
+    expect_equal(group_size(tbl), 30)
+  }
+})
+
+test_that("rowwise data has one group for each group", {
+  rw <- rowwise(df)
+  expect_equal(n_groups(rw), 30)
+  expect_equal(group_size(rw), rep(1, 30))
+})
+
+test_that("group_size correct for grouped data", {
+  for (tbl in tbls) {
+    grp <- group_by(tbl, x)
+    expect_equal(n_groups(grp), 3L)
+    expect_equal(group_size(grp), rep(10, 3))
+  }
+})
+
+# tbl_sum -------------------------------------------------------------------
+
+test_that("ungrouped output", {
+  mf <- memdb_frame(x = 1:5, y = 1:5, .name = "tbl_sum_test")
+
+  out1 <- tbl_sum(mf)
+  expect_named(out1, c("Source", "Database"))
+  expect_equal(out1[["Source"]], "table<tbl_sum_test> [?? x 2]")
+  expect_match(out1[["Database"]], "sqlite (.*) \\[:memory:\\]")
+
+  out2 <- tbl_sum(mf %>% group_by(x, y))
+  expect_named(out2, c("Source", "Database", "Groups"))
+  expect_equal(out2[["Groups"]], c("x, y"))
+
+  out3 <- tbl_sum(mf %>% arrange(x))
+  expect_named(out3, c("Source", "Database", "Ordered by"))
+  expect_equal(out3[["Ordered by"]], c("x"))
 })
