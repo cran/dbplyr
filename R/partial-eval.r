@@ -3,7 +3,7 @@
 #' This function partially evaluates an expression, using information from
 #' the tbl to determine whether names refer to local expressions
 #' or remote variables. This simplifies SQL translation because expressions
-#' don't need to carry around their environment - all revelant information
+#' don't need to carry around their environment - all relevant information
 #' is incorporated into the expression.
 #'
 #' @section Symbol substitution:
@@ -61,6 +61,8 @@ partial_eval <- function(call, vars = character(), env = caller_env()) {
     call
   } else if (is_symbol(call)) {
     partial_eval_sym(call, vars, env)
+  } else if (is_quosure(call)) {
+    partial_eval_call(get_expr(call), vars, get_env(call))
   } else if (is_call(call)) {
     partial_eval_call(call, vars, env)
   } else {
@@ -102,7 +104,11 @@ partial_eval_call <- function(call, vars, env) {
   fun <- call[[1]]
 
   # Try to find the name of inlined functions
-  if (is.function(fun)) {
+  if (inherits(fun, "inline_colwise_function")) {
+    dot_var <- vars[[attr(call, "position")]]
+    call <- replace_dot(attr(fun, "formula")[[2]], dot_var)
+    env <- get_env(attr(fun, "formula"))
+  } else if (is.function(fun)) {
     fun_name <- find_fun(fun)
     if (is.null(fun_name)) {
       # This probably won't work, but it seems like it's worth a shot.
@@ -184,4 +190,15 @@ fun_name <- function(fun) {
   }
 
   NULL
+}
+
+replace_dot <- function(call, var) {
+  if (is_symbol(call, ".")) {
+    sym(var)
+  } else if (is_call(call)) {
+    call[] <- lapply(call, replace_dot, var = var)
+    call
+  } else {
+    call
+  }
 }
