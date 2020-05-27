@@ -165,13 +165,11 @@ FROM `df`")
   )
 })
 
-test_that("ORDER BY in subqueries uses TOP 100 PERCENT (#175)", {
-  mf <- lazy_frame(x = 1:3, con = simulate_mssql())
-
-  expect_equal(
-    mf %>% mutate(x = -x) %>% arrange(x) %>% mutate(x = -x) %>% sql_render(),
-    sql("SELECT -`x` AS `x`\nFROM (SELECT TOP 100 PERCENT *\nFROM (SELECT TOP 100 PERCENT -`x` AS `x`\nFROM `df`) `dbplyr_001`\nORDER BY `x`) `dbplyr_002`")
-  )
+test_that("ORDER BY in subqueries uses TOP 9223372036854775807 (#337)", {
+  local_options(dbplyr_table_num = 0)
+  verify_output("sql/mssql-order-by.txt", {
+    sql_select(simulate_mssql(), "x", "y", order_by = "z", bare_identifier_ok = TRUE)
+  })
 })
 
 test_that("custom lubridate functions translated correctly", {
@@ -199,4 +197,55 @@ test_that("custom lubridate functions translated correctly", {
   expect_equal(trans(quarter(x)), sql("DATEPART(QUARTER, `x`)"))
   expect_equal(trans(quarter(x, with_year = TRUE)), sql("(DATENAME(YEAR, `x`) + '.' + DATENAME(QUARTER, `x`))"))
   expect_error(trans(quarter(x, fiscal_start = 5)))
+})
+
+
+test_that("custom escapes translated correctly", {
+
+  mf <- lazy_frame(x = "abc", con = simulate_mssql())
+
+  a <- as_blob("abc")
+  b <- as_blob(as.raw(c(0x01, 0x02)))
+
+  expect_equal(
+    mf %>% filter(x == a) %>% sql_render(),
+    sql("SELECT *\nFROM `df`\nWHERE (`x` = 0x616263)")
+  )
+
+  L <- c(a, b)
+  expect_equal(
+    mf %>% filter(x %in% L) %>% sql_render(),
+    sql("SELECT *\nFROM `df`\nWHERE (`x` IN (0x616263, 0x0102))")
+  )
+})
+
+# Live database -----------------------------------------------------------
+
+test_that("mssql can copy_to() with temporary tables (#272)", {
+  skip_if_no_db("mssql")
+
+  df1 <- tibble(x = 1:3)
+
+  expect_equal(
+    src_test("mssql") %>%
+      copy_to(df1, name = unique_table_name(), temporary = TRUE) %>%
+      collect(),
+    df1
+  )
+})
+
+test_that("mssql can compute() with temporary tables (#272)", {
+  skip_if_no_db("mssql")
+
+  df1 <- tibble(x = 1:3)
+
+  expect_equal(
+    src_test("mssql") %>%
+      copy_to(df1, name = unique_table_name(), temporary = TRUE) %>%
+      mutate(x = x + 1L) %>%
+      compute(temporary = TRUE) %>%
+      collect(),
+    df1 %>%
+      mutate(x = x + 1L)
+  )
 })

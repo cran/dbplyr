@@ -21,13 +21,14 @@
       # TOP is expected after DISTINCT and not at the end of the query
       # e.g: SELECT TOP 100 * FROM my_table
       build_sql("TOP(", as.integer(limit), ") ", con = con)
-    } else if (!is.null(order_by) && bare_identifier_ok) {
+    } else if (length(order_by) > 0 && bare_identifier_ok) {
       # Stop-gap measure so that a wider range of queries is supported (#276).
       # MS SQL doesn't allow ORDER BY in subqueries,
       # unless also TOP (or FOR XML) is specified.
-      # Workaround: Use TOP 100 PERCENT
-      # https://stackoverflow.com/a/985953/946850
-      sql("TOP 100 PERCENT ")
+      # Workaround: Use TOP 9223372036854775807 as this is signed 64-bit int max
+      # and some versions of SQL Server such as Azure Data Warehouse don't
+      # support TOP 100 PERCENT. https://stackoverflow.com/a/4971263
+      sql("TOP 9223372036854775807 ")
     },
 
     escape(select, collapse = ", ", con = con),
@@ -178,11 +179,18 @@
   )}
 
 #' @export
+`sql_escape_raw.Microsoft SQL Server` <- function(con, x) {
+  # SQL Server binary constants should be prefixed with 0x
+  # https://docs.microsoft.com/en-us/sql/t-sql/data-types/constants-transact-sql?view=sql-server-ver15#binary-constants
+  paste0(c("0x", format(x)), collapse = "")
+}
+
+#' @export
 `db_analyze.Microsoft SQL Server` <- function(con, table, ...) {
   # Using UPDATE STATISTICS instead of ANALYZE as recommended in this article
   # https://docs.microsoft.com/en-us/sql/t-sql/statements/update-statistics-transact-sql
   sql <- build_sql("UPDATE STATISTICS ", as.sql(table), con = con)
-  DBI::dbExecute(con, sql)
+  DBI::dbExecute(con, sql, immediate = TRUE)
 }
 
 
@@ -195,7 +203,9 @@
 mssql_temp_name <- function(name, temporary) {
   if (temporary && substr(name, 1, 1) != "#") {
     name <- paste0("#", name)
-    message("Created a temporary table named: ", name)
+    inform(paste0("Created a temporary table named: ", name),
+      class = c("dbplyr_message_temp_table", "dbplyr_message")
+    )
   }
   name
 }
@@ -225,7 +235,7 @@ mssql_temp_name <- function(name, temporary) {
     "FROM (", sql, ") AS temp",
     con = con
   )
-  dbExecute(con, tt_sql)
+  dbExecute(con, tt_sql, immediate = TRUE)
   name
 
 }
