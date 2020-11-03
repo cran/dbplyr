@@ -25,13 +25,13 @@ same_src.src_sql <- function(x, y) {
 #' @importFrom dplyr src_tbls
 #' @export
 src_tbls.src_sql <- function(x, ...) {
-  db_list_tables(x$con)
+  dbListTables(x$con)
 }
 
 #' @export
 format.src_sql <- function(x, ...) {
   paste0(
-    "src:  ", db_desc(x$con), "\n",
+    "src:  ", dbplyr_connection_describe(x$con), "\n",
     wrap("tbls: ", paste0(sort(src_tbls(x)), collapse = ", "))
   )
 }

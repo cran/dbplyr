@@ -14,8 +14,10 @@
 \alias{sql_prefix}
 \alias{sql_aggregate}
 \alias{sql_aggregate_2}
+\alias{sql_aggregate_n}
 \alias{sql_not_supported}
 \alias{sql_cast}
+\alias{sql_try_cast}
 \alias{sql_log}
 \alias{sql_cot}
 \alias{base_scalar}
@@ -51,9 +53,13 @@ sql_aggregate(f, f_r = f)
 
 sql_aggregate_2(f)
 
+sql_aggregate_n(f, f_r = f)
+
 sql_not_supported(f)
 
 sql_cast(type)
+
+sql_try_cast(type)
 
 sql_log()
 
@@ -122,7 +128,7 @@ postgres_agg <- sql_translator(.parent = base_agg,
 
 # Next we have to simulate a connection that uses this variant
 con <- simulate_dbi("TestCon")
-sql_translate_env.TestCon <- function(x) {
+sql_translation.TestCon <- function(x) {
   sql_variant(
     base_scalar,
     postgres_agg,

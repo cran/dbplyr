@@ -1,12 +1,13 @@
 #' @export
 #' @rdname sql_build
-semi_join_query <- function(x, y, anti = FALSE, by = NULL) {
+semi_join_query <- function(x, y, anti = FALSE, by = NULL, na_matches = FALSE) {
   structure(
     list(
       x = x,
       y = y,
       anti = anti,
-      by = by
+      by = by,
+      na_matches = na_matches
     ),
     class = c("semi_join_query", "query")
   )
@@ -27,37 +28,17 @@ print.semi_join_query <- function(x, ...) {
 }
 
 #' @export
-sql_render.semi_join_query <- function(query, con = NULL, ..., bare_identifier_ok = FALSE) {
-  from_x <- sql_subquery(
+sql_render.semi_join_query <- function(query, con = NULL, ..., subquery = FALSE) {
+  from_x <- dbplyr_sql_subquery(
     con,
-    sql_render(query$x, con, ..., bare_identifier_ok = TRUE),
+    sql_render(query$x, con, ..., subquery = TRUE),
     name = "LHS"
   )
-  from_y <- sql_subquery(
+  from_y <- dbplyr_sql_subquery(
     con,
-    sql_render(query$y, con, ..., bare_identifier_ok = TRUE),
+    sql_render(query$y, con, ..., subquery = TRUE),
     name = "RHS"
   )
 
-  sql_semi_join(con, from_x, from_y, anti = query$anti, by = query$by)
+  dbplyr_query_semi_join(con, from_x, from_y, anti = query$anti, by = query$by)
 }
-
-# SQL generation ----------------------------------------------------------
-
-#' @export
-sql_semi_join.DBIConnection <- function(con, x, y, anti = FALSE, by = NULL, ...) {
-  lhs <- escape(ident("LHS"), con = con)
-  rhs <- escape(ident("RHS"), con = con)
-
-  on <- sql_join_tbls(con, by)
-
-  build_sql(
-    "SELECT * FROM ", x, "\n",
-    "WHERE ", if (anti) sql("NOT "), "EXISTS (\n",
-    "  SELECT 1 FROM ", y, "\n",
-    "  WHERE ", on, "\n",
-    ")",
-    con = con
-  )
-}
-

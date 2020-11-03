@@ -1,13 +1,14 @@
 #' @export
 #' @rdname sql_build
-join_query <- function(x, y, vars, type = "inner", by = NULL, suffix = c(".x", ".y")) {
+join_query <- function(x, y, vars, type = "inner", by = NULL, suffix = c(".x", ".y"), na_matches = FALSE) {
   structure(
     list(
       x = x,
       y = y,
       vars = vars,
       type = type,
-      by = by
+      by = by,
+      na_matches = na_matches
     ),
     class = c("join_query", "query")
   )
@@ -28,47 +29,28 @@ print.join_query <- function(x, ...) {
 }
 
 #' @export
-sql_render.join_query <- function(query, con = NULL, ..., bare_identifier_ok = FALSE) {
-  from_x <- sql_subquery(
+sql_render.join_query <- function(query, con = NULL, ..., subquery = FALSE) {
+  from_x <- dbplyr_sql_subquery(
     con,
-    sql_render(query$x, con, ..., bare_identifier_ok = TRUE),
+    sql_render(query$x, con, ..., subquery = TRUE),
     name = "LHS"
   )
-  from_y <- sql_subquery(
+  from_y <- dbplyr_sql_subquery(
     con,
-    sql_render(query$y, con, ..., bare_identifier_ok = TRUE),
+    sql_render(query$y, con, ..., subquery = TRUE),
     name = "RHS"
   )
 
-  sql_join(con, from_x, from_y, vars = query$vars, type = query$type, by = query$by)
+  dbplyr_query_join(con, from_x, from_y,
+    vars = query$vars,
+    type = query$type,
+    by = query$by,
+    na_matches = query$na_matches
+  )
 }
 
 # SQL generation ----------------------------------------------------------
 
-#' @export
-sql_join.DBIConnection <- function(con, x, y, vars, type = "inner", by = NULL, ...) {
-  JOIN <- switch(
-    type,
-    left = sql("LEFT JOIN"),
-    inner = sql("INNER JOIN"),
-    right = sql("RIGHT JOIN"),
-    full = sql("FULL JOIN"),
-    cross = sql("CROSS JOIN"),
-    stop("Unknown join type:", type, call. = FALSE)
-  )
-
-  select <- sql_join_vars(con, vars)
-  on <- sql_join_tbls(con, by)
-
-  # Wrap with SELECT since callers assume a valid query is returned
-  build_sql(
-    "SELECT ", select, "\n",
-    "FROM ", x, "\n",
-    JOIN, " ", y, "\n",
-    if (!is.null(on)) build_sql("ON ", on, "\n", con = con) else NULL,
-    con = con
-  )
-}
 
 sql_join_vars <- function(con, vars) {
   sql_vector(
@@ -77,7 +59,7 @@ sql_join_vars <- function(con, vars) {
       alias = vars$alias,
       x = vars$x,
       y = vars$y,
-      MoreArgs = list(con = con),
+      MoreArgs = list(con = con, all_x = vars$all_x, all_y = vars$all_y),
       SIMPLIFY = FALSE,
       USE.NAMES = TRUE
     ),
@@ -87,7 +69,7 @@ sql_join_vars <- function(con, vars) {
   )
 }
 
-sql_join_var <- function(con, alias, x, y) {
+sql_join_var <- function(con, alias, x, y, all_x, all_y) {
   if (!is.na(x) && !is.na(y)) {
     sql_expr(
       COALESCE(
@@ -97,27 +79,31 @@ sql_join_var <- function(con, alias, x, y) {
       con = con
     )
   } else if (!is.na(x)) {
-    sql_table_prefix(con, x, table = "LHS")
+    sql_table_prefix(con, x, table = if (x %in% all_y) "LHS")
   } else if (!is.na(y)) {
-    sql_table_prefix(con, y, table = "RHS")
+    sql_table_prefix(con, y, table = if (y %in% all_x) "RHS")
   } else {
     stop("No source for join column ", alias, call. = FALSE)
   }
 }
 
-sql_join_tbls <- function(con, by) {
+sql_join_tbls <- function(con, by, na_matches = "never") {
+  na_matches <- arg_match(na_matches, c("na", "never"))
+
   on <- NULL
-  if (length(by$x) + length(by$y) > 0) {
-    on <- sql_vector(
-      paste0(
-        sql_table_prefix(con, by$x, "LHS"),
-        " = ",
-        sql_table_prefix(con, by$y, "RHS")
-      ),
-      collapse = " AND ",
-      parens = TRUE,
-      con = con
-    )
+  if (na_matches == "na" || length(by$x) + length(by$y) > 0) {
+    lhs <- sql_table_prefix(con, by$x, "LHS")
+    rhs <- sql_table_prefix(con, by$y, "RHS")
+
+    if (na_matches == "na") {
+      compare <- purrr::map_chr(seq_along(lhs), function(i) {
+        sql_expr_matches(sql(lhs[[i]]), sql(rhs[[i]]), con = con)
+      })
+    } else {
+      compare <- paste0(lhs, " = ", rhs)
+    }
+
+    on <- sql_vector(compare, collapse = " AND ", parens = TRUE, con = con)
   } else if (length(by$on) > 0) {
     on <- build_sql("(", by$on, ")", con = con)
   }

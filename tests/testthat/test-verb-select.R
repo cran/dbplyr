@@ -1,5 +1,3 @@
-context("select")
-
 test_that("select quotes correctly", {
   out <- memdb_frame(x = 1, y = 1) %>%
     select(x) %>%
@@ -59,6 +57,13 @@ test_that("can rename multiple vars", {
   expect_equal_tbl(mf %>% group_by(a) %>% rename(c = a, d = b), exp)
 })
 
+test_that("can rename with a function", {
+  mf <- memdb_frame(a = 1, b = 2)
+
+  expect_named(mf %>% rename_with(toupper) %>% collect(), c("A", "B"))
+  expect_named(mf %>% rename_with(toupper, 1) %>% collect(), c("A", "b"))
+})
+
 test_that("select preserves grouping vars", {
   mf <- memdb_frame(a = 1, b = 2) %>% group_by(b)
   out <- mf %>% select(a) %>% collect()
@@ -66,125 +71,31 @@ test_that("select preserves grouping vars", {
   expect_named(out, c("b", "a"))
 })
 
+test_that("relocate works", {
+  mf <- memdb_frame(a = 1, b = 2, c = 1) %>% group_by(b)
+
+  out1 <- mf %>% relocate(c) %>% collect()
+  expect_named(out1, c("c", "a", "b"))
+  out2 <- mf %>% relocate(a, .after = c) %>% collect()
+  expect_named(out2, c("b", "c", "a"))
+})
 
 # sql_render --------------------------------------------------------------
 
 test_that("multiple selects are collapsed", {
   lf <- lazy_frame(x = 1, y = 2)
 
-  reg <- list(
-    flip2 = lf %>% select(2:1) %>% select(2:1),
-    flip3 = lf %>% select(2:1) %>% select(2:1) %>% select(2:1),
-    rename = lf %>% select(x1 = x) %>% select(x2 = x1)
-  )
-
-  expect_known_output(print(reg), test_path("sql/select-collapse.sql"))
+  expect_snapshot(lf %>% select(2:1) %>% select(2:1))
+  expect_snapshot(lf %>% select(2:1) %>% select(2:1) %>% select(2:1))
+  expect_snapshot(lf %>% select(x1 = x) %>% select(x2 = x1))
 })
 
 test_that("mutate collapses over nested select", {
   lf <- lazy_frame(g = 0, x = 1, y = 2)
 
-  reg <- list(
-    a = lf %>% mutate(a = 1, b = 2) %>% select(a),
-    x = lf %>% mutate(a = 1, b = 2) %>% select(x)
-  )
-
-  expect_known_output(print(reg), test_path("sql/select-mutate-collapse.sql"))
+  expect_snapshot(lf %>% mutate(a = 1, b = 2) %>% select(a))
+  expect_snapshot(lf %>% mutate(a = 1, b = 2) %>% select(x))
 })
-
-test_that("arrange renders correctly (#373)", {
-  local_options(dbplyr_table_num = 0)
-  verify_output(test_path("sql/arrange.txt"), {
-    "# arrange renders correctly"
-    lf <- lazy_frame(a = 1:3, b = 3:1)
-
-    "basic"
-    lf %>% arrange(a)
-
-    "double arrange"
-    lf %>% arrange(a) %>% arrange(b)
-
-    "remove ordered by"
-    lf %>% arrange(a) %>% select(-a)
-    lf %>% arrange(a) %>% select(-a) %>% arrange(b)
-
-    "un-arrange"
-    lf %>% arrange(a) %>% arrange()
-    lf %>% arrange(a) %>% select(-a) %>% arrange()
-
-    "use order"
-    lf %>% arrange(a) %>% select(-a) %>% mutate(c = lag(b))
-  })
-})
-
-test_that("arrange renders correctly for single-table verbs (#373)", {
-  local_options(dbplyr_table_num = 0)
-  verify_output(test_path("sql/arrange-single.txt"), {
-    lf <- lazy_frame(a = 1:3, b = 3:1)
-
-    "head"
-    lf %>% head(1) %>% arrange(a)
-    lf %>% arrange(a) %>% head(1)
-    lf %>% arrange(a) %>% head(1) %>% arrange(b)
-
-    "mutate"
-    lf %>% mutate(a = b) %>% arrange(a)
-
-    "complex mutate"
-    lf %>% arrange(a) %>% mutate(a = b) %>% arrange(a)
-    lf %>% arrange(a) %>% mutate(a = 1) %>% arrange(b)
-    lf %>% arrange(a) %>% mutate(b = a) %>% arrange(b)
-    lf %>% arrange(a) %>% mutate(b = 1) %>% arrange(b)
-    lf %>% mutate(a = -a) %>% arrange(a) %>% mutate(a = -a)
-  })
-})
-
-test_that("arrange renders correctly for joins (#373)", {
-  local_options(dbplyr_table_num = 0)
-  verify_output(test_path("sql/arrange-join.txt"), {
-    lf <- lazy_frame(a = 1:3, b = 3:1)
-    rf <- lazy_frame(a = 1:3, c = 4:6)
-
-    "join"
-    lf %>% arrange(a) %>% left_join(rf)
-    lf %>% arrange(b) %>% left_join(rf)
-    lf %>% left_join(rf) %>% arrange(a)
-    lf %>% left_join(rf) %>% arrange(b)
-    lf %>% left_join(rf %>% arrange(a))
-    lf %>% left_join(rf %>% arrange(c))
-  })
-})
-
-test_that("arrange renders correctly for semi-joins (#373)", {
-  local_options(dbplyr_table_num = 0)
-  verify_output(test_path("sql/arrange-semi-join.txt"), {
-    lf <- lazy_frame(a = 1:3, b = 3:1)
-    rf <- lazy_frame(a = 1:3, c = 4:6)
-
-    "semi_join"
-    lf %>% arrange(a) %>% semi_join(rf)
-    lf %>% arrange(b) %>% semi_join(rf)
-    lf %>% semi_join(rf) %>% arrange(a)
-    lf %>% semi_join(rf) %>% arrange(b)
-    lf %>% semi_join(rf %>% arrange(a))
-    lf %>% semi_join(rf %>% arrange(c))
-  })
-})
-
-test_that("arrange renders correctly for set operations (#373)", {
-  local_options(dbplyr_table_num = 0)
-  verify_output(test_path("sql/arrange-setop.txt"), {
-    lf <- lazy_frame(a = 1:3, b = 3:1)
-    rf <- lazy_frame(a = 1:3, c = 4:6)
-
-    "setop"
-    lf %>% union_all(rf) %>% arrange(a)
-    lf %>% arrange(a) %>% union_all(rf)
-    lf %>% union_all(rf %>% arrange(a))
-  })
-})
-
-
 
 # sql_build -------------------------------------------------------------
 
@@ -235,6 +146,12 @@ test_that("rename preserves existing", {
 })
 
 test_that("rename renames grouping vars", {
-  df <- lazy_frame(a = 1, b = 2) %>% group_by(a) %>% rename(c = a)
-  expect_equal(op_grps(df), "c")
+  df <- lazy_frame(a = 1, b = 2)
+  expect_equal(df %>% group_by(a) %>% rename(c = a) %>% op_grps(), "c")
+})
+
+test_that("mutate preserves grouping vars (#396)", {
+  df <- lazy_frame(a = 1, b = 2, c = 3) %>% group_by(a, b)
+  expect_equal(df %>% mutate(a = 1) %>% op_grps(), c("a", "b"))
+  expect_equal(df %>% mutate(b = 1) %>% op_grps(), c("a", "b"))
 })

@@ -52,11 +52,6 @@ escape.ident <- function(x, parens = FALSE, collapse = ", ", con = NULL) {
 }
 
 #' @export
-escape.ident_q <- function(x, parens = FALSE, collapse = ", ", con = NULL) {
-  sql_vector(names_to_as(x, names2(x), con = con), parens, collapse, con = con)
-}
-
-#' @export
 escape.logical <- function(x, parens = NA, collapse = ", ", con = NULL) {
   sql_vector(sql_escape_logical(con, x), parens, collapse, con = con)
 }
@@ -132,30 +127,21 @@ escape.list <- function(x, parens = TRUE, collapse = ", ", con = NULL) {
 
 #' @export
 escape.data.frame <- function(x, parens = TRUE, collapse = ", ", con = NULL) {
-  message <- paste0(
-    "Cannot embed a data frame in a SQL query.\n\n",
-    "If you are seeing this error in code that used to work, the most likely ",
-    "cause is a change dbplyr 1.4.0. Previously `df$x` or `df[[y]]` implied ",
-    "that `df` was a local variable, but  now you must make that explict ",
-    " with `!!` or `local()`, e.g.,  `!!df$x` or `local(df[[\"y\"]])"
-  )
-
-  abort(paste(strwrap(message), collapse = "\n"))
+  error_embed("a data.frame", "df$x")
 }
 
 #' @export
 escape.reactivevalues <- function(x, parens = TRUE, collapse = ", ", con = NULL) {
-  message <- paste0(
-    "Cannot embed a reactiveValues() object in a SQL query.\n\n",
-    "If you are seeing this error in code that used to work, the most likely ",
-    "cause is a change dbplyr 1.4.0. Previously `df$x` or `df[[y]]` implied ",
-    "that `df` was a local variable, but  now you must make that explict ",
-    " with `!!` or `local()`, e.g.,  `!!df$x` or `local(df[[\"y\"]])"
-  )
-
-  abort(paste(strwrap(message), collapse = "\n"))
+  error_embed("shiny inputs", "inputs$x")
 }
 
+# Also used in default_ops() for reactives
+error_embed <- function(type, expr) {
+  abort(c(
+    glue("Cannot translate {type} to SQL."),
+    glue("Force evaluation in R with (e.g.) `!!{expr}` or `local({expr})`")
+  ))
+}
 
 #' @export
 #' @rdname escape
@@ -217,75 +203,4 @@ sql_quote <- function(x, quote) {
   names(y) <- names(x)
 
   y
-}
-
-#' More SQL generics
-#'
-#' These are new, so not included in dplyr for backward compatibility
-#' purposes.
-#'
-#' @keywords internal
-#' @export
-sql_escape_logical <- function(con, x) {
-  UseMethod("sql_escape_logical")
-}
-
-#' @keywords internal
-#' @export
-#' @rdname sql_escape_logical
-sql_escape_date <- function(con, x) {
-  UseMethod("sql_escape_date")
-}
-
-
-#' @keywords internal
-#' @export
-#' @rdname sql_escape_logical
-sql_escape_datetime <- function(con, x) {
-  UseMethod("sql_escape_datetime")
-}
-
-#' @keywords internal
-#' @export
-#' @rdname sql_escape_logical
-sql_escape_raw <- function(con, x) {
-  UseMethod("sql_escape_raw")
-}
-
-# DBIConnection methods --------------------------------------------------------
-
-#' @export
-sql_escape_string.DBIConnection <- function(con, x) {
-  dbQuoteString(con, x)
-}
-
-#' @export
-sql_escape_date.DBIConnection <- function(con, x) {
-  sql_escape_string(con, as.character(x))
-}
-
-#' @export
-sql_escape_datetime.DBIConnection <- function(con, x) {
-  x <- strftime(x, "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC")
-  sql_escape_string(con, x)
-}
-
-#' @export
-sql_escape_ident.DBIConnection <- function(con, x) {
-  dbQuoteIdentifier(con, x)
-}
-
-#' @export
-sql_escape_logical.DBIConnection <- function(con, x) {
-  y <- as.character(x)
-  y[is.na(x)] <- "NULL"
-
-  y
-}
-
-#' @export
-sql_escape_raw.DBIConnection <- function(con, x) {
-  # SQL-99 standard for BLOB literals
-  # https://crate.io/docs/sql-99/en/latest/chapters/05.html#blob-literal-s
-  paste0(c("X'", format(x), "'"), collapse = "")
 }

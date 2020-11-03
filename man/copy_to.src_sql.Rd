@@ -2,7 +2,7 @@
 % Please edit documentation in R/verb-copy-to.R
 \name{copy_to.src_sql}
 \alias{copy_to.src_sql}
-\title{Copy a local data frame to a DBI backend.}
+\title{Copy a local data frame to a remote database}
 \usage{
 \method{copy_to}{src_sql}(
   dest,
@@ -14,7 +14,8 @@
   unique_indexes = NULL,
   indexes = NULL,
   analyze = TRUE,
-  ...
+  ...,
+  in_transaction = TRUE
 )
 }
 \arguments{
@@ -32,7 +33,7 @@ name \code{name}. If \code{FALSE}, will throw an error if \code{name} already
 exists.}
 
 \item{types}{a character vector giving variable types to use for the columns.
-See \url{http://www.sqlite.org/datatype3.html} for available types.}
+See \url{https://www.sqlite.org/datatype3.html} for available types.}
 
 \item{temporary}{if \code{TRUE}, will create a temporary table that is
 local to this connection and will be automatically deleted when the
@@ -49,30 +50,34 @@ will create a new index.}
 new table so that the query optimiser has useful information.}
 
 \item{...}{other parameters passed to methods.}
+
+\item{in_transaction}{Should the table creation be wrapped in a transaction?
+This typically makes things faster, but you may want to suppress if the
+database doesn't support transactions, or you're wrapping in a transaction
+higher up (and your database doesn't support nested transactions.)}
 }
 \value{
-A \code{\link[=tbl]{tbl()}} object (invisibly).
+Another \code{tbl_lazy}. Use \code{\link[=show_query]{show_query()}} to see the generated
+query, and use \code{\link[=collect.tbl_sql]{collect()}} to execute the query
+and return data to R.
 }
 \description{
-This \code{\link[=copy_to]{copy_to()}} method works for all DBI sources. It is useful for
-copying small amounts of data to a database for examples, experiments,
-and joins. By default, it creates temporary tables which are typically
-only visible to the current connection to the database.
+This is an implementation of the dplyr \code{\link[=copy_to]{copy_to()}} generic and it mostly
+a wrapper around \code{\link[DBI:dbWriteTable]{DBI::dbWriteTable()}}.
+
+It is useful for copying small amounts of data to a database for examples,
+experiments, and joins. By default, it creates temporary tables which are
+only visible within the current connection to the database.
 }
 \examples{
-library(dplyr)
-set.seed(1014)
+library(dplyr, warn.conflicts = FALSE)
 
-mtcars$model <- rownames(mtcars)
-mtcars2 <- src_memdb() \%>\%
-  copy_to(mtcars, indexes = list("model"), overwrite = TRUE)
-mtcars2 \%>\% filter(model == "Hornet 4 Drive")
+df <- data.frame(x = 1:5, y = letters[5:1])
+db <- copy_to(src_memdb(), df)
+db
 
-cyl8 <- mtcars2 \%>\% filter(cyl == 8)
-cyl8_cached <- copy_to(src_memdb(), cyl8)
-
-# copy_to is called automatically if you set copy = TRUE
+df2 <- data.frame(y = c("a", "d"), fruit = c("apple", "date"))
+# copy_to() is called automatically if you set copy = TRUE
 # in the join functions
-df <- tibble(cyl = c(6, 8))
-mtcars2 \%>\% semi_join(df, copy = TRUE)
+db \%>\% left_join(df2, copy = TRUE)
 }

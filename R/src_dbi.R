@@ -17,7 +17,6 @@
 #' @param src A `DBIConnection` object produced by `DBI::dbConnect()`.
 #' @param from Either a string (giving a table name),
 #'   a fully qualified table name created by [in_schema()]
-#'   or wrapped by [ident_q()],
 #'   or a literal [sql()] string.
 #' @param ... Needed for compatibility with generic; currently ignored.
 #' @export
@@ -34,9 +33,8 @@
 #' # To retrieve a single table from a source, use `tbl()`
 #' con %>% tbl("mtcars")
 #'
-#' # Use `in_schema()` or `ident_q()` for fully qualified table names
+#' # Use `in_schema()` for fully qualified table names
 #' con %>% tbl(in_schema("temp", "mtcars")) %>% head(1)
-#' con %>% tbl(ident_q("temp.mtcars")) %>% head(1)
 #'
 #' # You can also use pass raw SQL if you want a more sophisticated query
 #' con %>% tbl(sql("SELECT * FROM mtcars WHERE cyl = 8"))
@@ -48,9 +46,8 @@
 #' # we'll use the Lahman database. lahman_sqlite() takes care of
 #' # creating the database.
 #'
-#' if (has_lahman("sqlite")) {
-#' lahman_p <- lahman_sqlite()
-#' batting <- lahman_p %>% tbl("Batting")
+#' if (requireNamespace("Lahman", quietly = TRUE)) {
+#' batting <- copy_to(con, Lahman::Batting)
 #' batting
 #'
 #' # Basic data manipulation verbs work in the same way as with a tibble

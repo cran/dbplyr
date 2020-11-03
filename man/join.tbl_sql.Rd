@@ -8,17 +8,18 @@
 \alias{full_join.tbl_lazy}
 \alias{semi_join.tbl_lazy}
 \alias{anti_join.tbl_lazy}
-\title{Join sql tbls.}
+\title{Join SQL tables}
 \usage{
 \method{inner_join}{tbl_lazy}(
   x,
   y,
   by = NULL,
   copy = FALSE,
-  suffix = c(".x", ".y"),
+  suffix = NULL,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 
 \method{left_join}{tbl_lazy}(
@@ -26,10 +27,11 @@
   y,
   by = NULL,
   copy = FALSE,
-  suffix = c(".x", ".y"),
+  suffix = NULL,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 
 \method{right_join}{tbl_lazy}(
@@ -37,10 +39,11 @@
   y,
   by = NULL,
   copy = FALSE,
-  suffix = c(".x", ".y"),
+  suffix = NULL,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 
 \method{full_join}{tbl_lazy}(
@@ -48,10 +51,11 @@
   y,
   by = NULL,
   copy = FALSE,
-  suffix = c(".x", ".y"),
+  suffix = NULL,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 
 \method{semi_join}{tbl_lazy}(
@@ -61,7 +65,8 @@
   copy = FALSE,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 
 \method{anti_join}{tbl_lazy}(
@@ -71,17 +76,12 @@
   copy = FALSE,
   auto_index = FALSE,
   ...,
-  sql_on = NULL
+  sql_on = NULL,
+  na_matches = c("never", "na")
 )
 }
 \arguments{
-\item{x}{A pair of data frames, data frame extensions (e.g. a tibble), or
-lazy data frames (e.g. from dbplyr or dtplyr). See \emph{Methods}, below, for
-more details.}
-
-\item{y}{A pair of data frames, data frame extensions (e.g. a tibble), or
-lazy data frames (e.g. from dbplyr or dtplyr). See \emph{Methods}, below, for
-more details.}
+\item{x, y}{A pair of lazy data frames backed by database queries.}
 
 \item{by}{A character vector of variables to join by.
 
@@ -121,92 +121,56 @@ there are matching indexes in \code{x}.}
 
 \item{...}{Other parameters passed onto methods.}
 
-\item{sql_on}{A custom join predicate as an SQL expression. The SQL
-can refer to the \code{LHS} and \code{RHS} aliases to disambiguate
-column names.}
+\item{sql_on}{A custom join predicate as an SQL expression.
+Usually joins use column equality, but you can perform more complex
+queries by supply \code{sql_on} which should be a SQL expression that
+uses \code{LHS} and \code{RHS} aliases to refer to the left-hand side or
+right-hand side of the join respectively.}
+
+\item{na_matches}{Should NA (NULL) values match one another?
+The default, "never", is how databases usually work. \code{"na"} makes
+the joins behave like the dplyr join functions, \code{\link[=merge]{merge()}}, \code{\link[=match]{match()}},
+and \code{\%in\%}.}
+}
+\value{
+Another \code{tbl_lazy}. Use \code{\link[=show_query]{show_query()}} to see the generated
+query, and use \code{\link[=collect.tbl_sql]{collect()}} to execute the query
+and return data to R.
 }
 \description{
-See \link{join} for a description of the general purpose of the
-functions.
+These are methods for the dplyr \link{join} generics. They are translated
+to the following SQL queries:
+\itemize{
+\item \code{inner_join(x, y)}: \verb{SELECT * FROM x JOIN y ON x.a = y.a}
+\item \code{left_join(x, y)}:  \verb{SELECT * FROM x LEFT JOIN y ON x.a = y.a}
+\item \code{right_join(x, y)}: \verb{SELECT * FROM x RIGHT JOIN y ON x.a = y.a}
+\item \code{full_join(x, y)}:  \verb{SELECT * FROM x FULL JOIN y ON x.a = y.a}
+\item \code{semi_join(x, y)}:  \verb{SELECT * FROM x WHERE EXISTS (SELECT 1 FROM y WHERE x.a = y.a)}
+\item \code{anti_join(x, y)}:  \verb{SELECT * FROM x WHERE NOT EXISTS (SELECT 1 FROM y WHERE x.a = y.a)}
 }
-\section{Implementation notes}{
-
-
-Semi-joins are implemented using \verb{WHERE EXISTS}, and anti-joins with
-\verb{WHERE NOT EXISTS}.
-
-All joins use column equality by default.
-An arbitrary join predicate can be specified by passing
-an SQL expression to the \code{sql_on} argument.
-Use \code{LHS} and \code{RHS} to refer to the left-hand side or
-right-hand side table, respectively.
 }
-
 \examples{
-\dontrun{
-library(dplyr)
-if (has_lahman("sqlite")) {
+library(dplyr, warn.conflicts = FALSE)
 
-# Left joins ----------------------------------------------------------------
-lahman_s <- lahman_sqlite()
-batting <- tbl(lahman_s, "Batting")
-team_info <- select(tbl(lahman_s, "Teams"), yearID, lgID, teamID, G, R:H)
+band_db <- tbl_memdb(dplyr::band_members)
+instrument_db <- tbl_memdb(dplyr::band_instruments)
+band_db \%>\% left_join(instrument_db) \%>\% show_query()
 
-# Combine player and whole team statistics
-first_stint <- select(filter(batting, stint == 1), playerID:H)
-both <- left_join(first_stint, team_info, type = "inner", by = c("yearID", "teamID", "lgID"))
-head(both)
-explain(both)
+# Can join with local data frames by setting copy = TRUE
+band_db \%>\%
+  left_join(dplyr::band_instruments, copy = TRUE)
 
-# Join with a local data frame
-grid <- expand.grid(
-  teamID = c("WAS", "ATL", "PHI", "NYA"),
-  yearID = 2010:2012)
-top4a <- left_join(batting, grid, copy = TRUE)
-explain(top4a)
+# Unlike R, joins in SQL don't usually match NAs (NULLs)
+db <- memdb_frame(x = c(1, 2, NA))
+label <- memdb_frame(x = c(1, NA), label = c("one", "missing"))
+db \%>\% left_join(label, by = "x")
+# But you can activate R's usual behaviour with the na_matches argument
+db \%>\% left_join(label, by = "x", na_matches = "na")
 
-# Indices don't really help here because there's no matching index on
-# batting
-top4b <- left_join(batting, grid, copy = TRUE, auto_index = TRUE)
-explain(top4b)
-
-# Semi-joins ----------------------------------------------------------------
-
-people <- tbl(lahman_s, "Master")
-
-# All people in hall of fame
-hof <- tbl(lahman_s, "HallOfFame")
-semi_join(people, hof)
-
-# All people not in the hall of fame
-anti_join(people, hof)
-
-# Find all managers
-manager <- tbl(lahman_s, "Managers")
-semi_join(people, manager)
-
-# Find all managers in hall of fame
-famous_manager <- semi_join(semi_join(people, manager), hof)
-famous_manager
-explain(famous_manager)
-
-# Anti-joins ----------------------------------------------------------------
-
-# batters without person covariates
-anti_join(batting, people)
-
-# Arbitrary predicates ------------------------------------------------------
-
-# Find all pairs of awards given to the same player
-# with at least 18 years between the awards:
-awards_players <- tbl(lahman_s, "AwardsPlayers")
-inner_join(
-  awards_players, awards_players,
-  sql_on = paste0(
-    "(LHS.playerID = RHS.playerID) AND ",
-    "(LHS.yearID < RHS.yearID - 18)"
-  )
-)
-}
-}
+# By default, joins are equijoins, but you can use `sql_on` to
+# express richer relationships
+db1 <- memdb_frame(x = 1:5)
+db2 <- memdb_frame(x = 1:3, y = letters[1:3])
+db1 \%>\% left_join(db2) \%>\% show_query()
+db1 \%>\% left_join(db2, sql_on = "LHS.x < RHS.x") \%>\% show_query()
 }

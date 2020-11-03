@@ -1,3 +1,18 @@
+#' Subset rows using column values
+#'
+#' This is a method for the dplyr [filter()] generic. It generates the
+#' `WHERE` clause of the SQL query.
+#'
+#' @inheritParams arrange.tbl_lazy
+#' @inheritParams dplyr::filter
+#' @param .preserve Not supported by this method.
+#' @inherit arrange.tbl_lazy return
+#' @examples
+#' library(dplyr, warn.conflicts = FALSE)
+#'
+#' db <- memdb_frame(x = c(2, NA, 5, NA, 10), y = 1:5)
+#' db %>% filter(x < 5) %>% show_query()
+#' db %>% filter(is.na(x)) %>% show_query()
 # registered onLoad
 #' @importFrom dplyr filter
 filter.tbl_lazy <- function(.data, ..., .preserve = FALSE) {
@@ -23,7 +38,7 @@ sql_build.op_filter <- function(op, con, ...) {
     )
   } else {
     # Do partial evaluation, then extract out window functions
-    where <- translate_window_where_all(op$dots, ls(sql_translate_env(con)$window))
+    where <- translate_window_where_all(op$dots, ls(dbplyr_sql_translation(con)$window))
 
     # Convert where$expr back to a lazy dots object, and then
     # create mutate operation

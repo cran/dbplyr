@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# dbplyr <img src="man/figures/logo.png" align="right" height="139" />
+# dbplyr <a href='https://dbplyr.tidyverse.org'><img src='man/figures/logo.png' align="right" height="139" /></a>
 
 <!-- badges: start -->
 
@@ -54,7 +54,7 @@ copy_to(con, mtcars)
 Note that you don’t actually need to load dbplyr with `library(dbplyr)`;
 dplyr automatically loads it for you when it sees you working with a
 database. Database connections are coordinated by the DBI package. Learn
-more at <http://dbi.r-dbi.org/>
+more at <https://dbi.r-dbi.org/>
 
 Now you can retrieve a table using `tbl()` (see `?tbl_dbi` for more
 details). Printing it just retrieves the first few rows:

@@ -82,7 +82,7 @@
 #' translate_sql(cumsum(mpg))
 #' translate_sql(cumsum(mpg), vars_order = "mpg")
 translate_sql <- function(...,
-                          con = simulate_dbi(),
+                          con = NULL,
                           vars = character(),
                           vars_group = NULL,
                           vars_order = NULL,
@@ -92,6 +92,8 @@ translate_sql <- function(...,
   if (!missing(vars)) {
     abort("`vars` is deprecated. Please use partial_eval() directly.")
   }
+
+  con <- con %||% sql_current_con() %||% simulate_dbi()
 
   translate_sql_(
     quos(...),
@@ -127,8 +129,7 @@ translate_sql_ <- function(dots,
   on.exit(set_current_con(old_con), add = TRUE)
 
   if (length(context) > 0) {
-    old_context <- set_current_context(context)
-    on.exit(set_current_context(old_context), add = TRUE)
+    local_context(context)
   }
 
   if (window) {
@@ -142,7 +143,7 @@ translate_sql_ <- function(dots,
     on.exit(set_win_current_frame(old_frame), add = TRUE)
   }
 
-  variant <- sql_translate_env(con)
+  variant <- dbplyr_sql_translation(con)
   pieces <- lapply(dots, function(x) {
     if (is_null(get_expr(x))) {
       NULL
@@ -164,11 +165,10 @@ sql_data_mask <- function(expr, variant, con, window = FALSE,
   # Default for unknown functions
   if (!strict) {
     unknown <- setdiff(all_calls(expr), names(variant))
-    top_env <- ceply(unknown, default_op, parent = empty_env())
+    top_env <- ceply(unknown, default_op, parent = empty_env(), env = get_env(expr))
   } else {
     top_env <- child_env(NULL)
   }
-
 
   # Known R -> SQL functions
   special_calls <- copy_env(variant$scalar, parent = top_env)
@@ -176,6 +176,22 @@ sql_data_mask <- function(expr, variant, con, window = FALSE,
     special_calls2 <- copy_env(variant$aggregate, parent = special_calls)
   } else {
     special_calls2 <- copy_env(variant$window, parent = special_calls)
+  }
+  special_calls2$`::` <- function(pkg, name) {
+    pkg <- as.character(substitute(pkg))
+    name <- as.character(substitute(name))
+    if (!is_installed(pkg)) {
+      abort(glue("There is no package called '{pkg}'"))
+    }
+    if (!env_has(ns_env(pkg), name)) {
+      abort(glue("'{name}' is not an exported object from '{pkg}'"))
+    }
+
+    if (env_has(special_calls2, name) || env_has(special_calls, name)) {
+      env_get(special_calls2, name, inherit = TRUE)
+    } else {
+      abort(glue("No known translation for {pkg}::{name}()"))
+    }
   }
 
   # Existing symbols in expression
@@ -197,8 +213,15 @@ is_infix_user <- function(x) {
   grepl("^%.*%$", x)
 }
 
-default_op <- function(x) {
+default_op <- function(x, env) {
   assert_that(is_string(x))
+
+  # Check for shiny reactives; these are zero-arg functions
+  # so need special handling to give a useful error
+  obj <- env_get(env, x, default = NULL, inherit = TRUE)
+  if (inherits(obj, "reactive")) {
+    error_embed("a shiny reactive", "foo()")
+  }
 
   if (is_infix_base(x)) {
     sql_infix(x)
@@ -209,7 +232,6 @@ default_op <- function(x) {
     sql_prefix(x)
   }
 }
-
 
 all_calls <- function(x) {
   if (is_quosure(x)) return(all_calls(quo_get_expr(x)))

@@ -189,6 +189,12 @@ set_current_con <- function(con) {
   invisible(old)
 }
 
+local_con <- function(con, env = parent.frame()) {
+  old <- set_current_con(con)
+  withr::defer(set_current_con(old), envir = env)
+  invisible()
+}
+
 set_win_current_group <- function(vars) {
   stopifnot(is.null(vars) || is.character(vars))
 
@@ -238,10 +244,13 @@ set_current_context <- function(context) {
 
 sql_current_context <- function() sql_context$context
 
-sql_current_select  <- function() sql_context$context %in% c("SELECT", "ORDER")
+local_context <- function(x, env = parent.frame()) {
+  old <- set_current_context(x)
+  withr::defer(set_current_context(old), envir = env)
+  invisible()
+}
 
 # Where translation -------------------------------------------------------
-
 
 uses_window_fun <- function(x, con) {
   if (is.null(x)) return(FALSE)
@@ -251,12 +260,12 @@ uses_window_fun <- function(x, con) {
     calls <- all_calls(x)
   }
 
-  win_f <- ls(envir = sql_translate_env(con)$window)
+  win_f <- ls(envir = dbplyr_sql_translation(con)$window)
   any(calls %in% win_f)
 }
 
 common_window_funs <- function() {
-  ls(sql_translate_env(NULL)$window)
+  ls(dbplyr_sql_translation(NULL)$window)
 }
 
 #' @noRd
@@ -280,7 +289,7 @@ translate_window_where <- function(expr, window_funs = common_window_funs()) {
       if (is_formula(expr)) {
         translate_window_where(f_rhs(expr), window_funs)
       } else if (is_call(expr, name = window_funs)) {
-        name <- unique_name()
+        name <- unique_subquery_name()
         window_where(sym(name), set_names(list(expr), name))
       } else {
         args <- lapply(expr[-1], translate_window_where, window_funs = window_funs)

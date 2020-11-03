@@ -34,7 +34,7 @@ test_register_src <- function(name, src) {
 #' @export
 #' @rdname testing
 test_register_con <- function(name, ...) {
-  test_register_src(name, src_dbi(DBI::dbConnect(...), auto_disconnect = TRUE))
+  test_register_src(name, DBI::dbConnect(...))
 }
 
 #' @export
@@ -42,9 +42,10 @@ test_register_con <- function(name, ...) {
 src_test <- function(name) {
   srcs <- test_srcs$get()
   if (!name %in% names(srcs)) {
-    stop("Couldn't find test src ", name, call. = FALSE)
+    testthat::skip(paste0("No ", name))
+  } else {
+    srcs[[name]]
   }
-  srcs[[name]]
 }
 
 #' @export
@@ -90,3 +91,10 @@ test_srcs <- local({
     }
   )
 })
+
+
+# Modern helpers ----------------------------------------------------------
+
+copy_to_test <- function(src, df, ...) {
+  copy_to(src_test(src), df, "test", ..., overwrite = TRUE)
+}

@@ -14,9 +14,9 @@
 #'   multiple `tbl` objects.
 tbl_sql <- function(subclass, src, from, ..., vars = NULL) {
   # If not literal sql, must be a table identifier
-  from <- as.sql(from)
+  from <- as.sql(from, con = src$con)
 
-  vars <- vars %||% db_query_fields(src$con, from)
+  vars <- vars %||% dbplyr_query_fields(src$con, from)
   ops <- op_base_remote(from, vars)
 
   dplyr::make_tbl(c(subclass, "sql", "lazy"), src = src, ops = ops)
@@ -67,12 +67,13 @@ as.data.frame.tbl_sql <- function(x, row.names = NULL, optional = NULL,
 }
 
 #' @export
+#' @importFrom tibble tbl_sum
 tbl_sum.tbl_sql <- function(x) {
   grps <- op_grps(x$ops)
   sort <- op_sort(x$ops)
   c(
     "Source" = tbl_desc(x),
-    "Database" = db_desc(x$src$con),
+    "Database" = dbplyr_connection_describe(x$src$con),
     "Groups" = if (length(grps) > 0) commas(grps),
     "Ordered by" = if (length(sort) > 0) commas(deparse_all(sort))
   )

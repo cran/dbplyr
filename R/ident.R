@@ -1,6 +1,3 @@
-#' @include utils.R
-NULL
-
 #' Flag a character vector as SQL identifiers
 #'
 #' `ident()` takes unquoted strings and flags them as identifiers.
@@ -25,13 +22,6 @@ NULL
 ident <- function(...) {
   x <- c_character(...)
   structure(x, class = c("ident", "character"))
-}
-
-#' @export
-#' @rdname ident
-ident_q <- function(...) {
-  x <- c_character(...)
-  structure(x, class = c("ident_q", "ident", "character"))
 }
 
 #' @export

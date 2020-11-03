@@ -1,17 +1,48 @@
+#' Backend: PostgreSQL
+#'
+#' @description
+#' See `vignette("translate-function")` and `vignette("translate-verb")` for
+#' details of overall translation technology. Key differences for this backend
+#' are:
+#'
+#' * Many stringr functions
+#' * lubridate date-time extraction functions
+#' * More standard statistical summaries
+#'
+#' Use `simulate_postgres()` with `lazy_frame()` to see simulated SQL without
+#' converting to live access database.
+#'
+#' @name backend-postgres
+#' @aliases NULL
+#' @examples
+#' library(dplyr, warn.conflicts = FALSE)
+#'
+#' lf <- lazy_frame(a = TRUE, b = 1, c = 2, d = "z", con = simulate_postgres())
+#' lf %>% summarise(x = sd(b, na.rm = TRUE))
+#' lf %>% summarise(y = cor(b, c), y = cov(b, c))
+NULL
+
 #' @export
-db_desc.PostgreSQLConnection <- function(x) {
-  info <- dbGetInfo(x)
+#' @rdname backend-postgres
+simulate_postgres <- function() simulate_dbi("PqConnection")
+
+#' @export
+dbplyr_edition.PostgreSQL <- function(con) {
+  2L
+}
+#' @export
+dbplyr_edition.PqConnection <- dbplyr_edition.PostgreSQL
+
+#' @export
+db_connection_describe.PqConnection <- function(con) {
+  info <- dbGetInfo(con)
   host <- if (info$host == "") "localhost" else info$host
 
   paste0("postgres ", info$serverVersion, " [", info$user, "@",
     host, ":", info$port, "/", info$dbname, "]")
 }
-
 #' @export
-db_desc.PostgreSQL <- db_desc.PostgreSQLConnection
-
-#' @export
-db_desc.PqConnection <- db_desc.PostgreSQLConnection
+db_connection_describe.PostgreSQL <- db_connection_describe.PqConnection
 
 postgres_grepl <- function(pattern, x, ignore.case = FALSE, perl = FALSE, fixed = FALSE, useBytes = FALSE) {
   # https://www.postgresql.org/docs/current/static/functions-matching.html#FUNCTIONS-POSIX-TABLE
@@ -31,7 +62,7 @@ postgres_round <- function(x, digits = 0L) {
 }
 
 #' @export
-sql_translate_env.PostgreSQLConnection <- function(con) {
+sql_translation.PqConnection <- function(con) {
   sql_variant(
     sql_translator(.parent = base_scalar,
       bitwXor = sql_infix("#"),
@@ -65,6 +96,15 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
       str_replace_all = function(string, pattern, replacement){
         sql_expr(regexp_replace(!!string, !!pattern, !!replacement, 'g'))
       },
+      str_squish = function(string){
+        sql_expr(ltrim(rtrim(regexp_replace(!!string, '\\s+', ' ', 'g'))))
+      },
+      str_remove = function(string, pattern){
+        sql_expr(regexp_replace(!!string, !!pattern, ''))
+      },
+      str_remove_all = function(string, pattern){
+        sql_expr(regexp_replace(!!string, !!pattern, '', 'g'))
+      },
 
       # lubridate functions
       month = function(x, label = FALSE, abbr = TRUE) {
@@ -89,7 +129,6 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
           sql_expr(EXTRACT(QUARTER %FROM% !!x))
         }
       },
-
       wday = function(x, label = FALSE, abbr = TRUE, week_start = NULL) {
         if (!label) {
           week_start <- week_start %||% getOption("lubridate.week.start", 7)
@@ -103,10 +142,47 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
           stop("Unrecognized arguments to `wday`", call. = FALSE)
         }
       },
-      yday = function(x) sql_expr(EXTRACT(DOY %FROM% !!x))
+      yday = function(x) sql_expr(EXTRACT(DOY %FROM% !!x)),
+
+      # https://www.postgresql.org/docs/13/datatype-datetime.html#DATATYPE-INTERVAL-INPUT
+      seconds = function(x) {
+        interval <- paste(x, "seconds")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      minutes = function(x) {
+        interval <- paste(x, "minutes")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      hours = function(x) {
+        interval <- paste(x, "hours")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      days = function(x) {
+        interval <- paste(x, "days")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      weeks = function(x) {
+        interval <- paste(x, "weeks")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      months = function(x) {
+        interval <- paste(x, "months")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+      years = function(x) {
+        interval <- paste(x, "years")
+        sql_expr(CAST(!!interval %AS% INTERVAL))
+      },
+
+      # https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-TRUNC
+      floor_date = function(x, unit = "seconds") {
+        unit <- arg_match(unit,
+          c("second", "minute", "hour", "day", "week", "month", "quarter", "year")
+        )
+        sql_expr(DATE_TRUNC(!!unit, !!x))
+      },
     ),
     sql_translator(.parent = base_agg,
-      n = function() sql("COUNT(*)"),
       cor = sql_aggregate_2("CORR"),
       cov = sql_aggregate_2("COVAR_SAMP"),
       sd = sql_aggregate("STDDEV_SAMP", "sd"),
@@ -116,9 +192,6 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
       str_flatten = function(x, collapse) sql_expr(string_agg(!!x, !!collapse))
     ),
     sql_translator(.parent = base_win,
-      n = function() {
-        win_over(sql("COUNT(*)"), partition = win_current_group())
-      },
       cor = win_aggregate_2("CORR"),
       cov = win_aggregate_2("COVAR_SAMP"),
       sd =  win_aggregate("STDDEV_SAMP"),
@@ -135,84 +208,30 @@ sql_translate_env.PostgreSQLConnection <- function(con) {
     )
   )
 }
+#' @export
+sql_translation.PostgreSQL <- sql_translation.PqConnection
 
 #' @export
-sql_translate_env.PostgreSQL <- sql_translate_env.PostgreSQLConnection
-
-#' @export
-sql_translate_env.PqConnection <- sql_translate_env.PostgreSQLConnection
-
-#' @export
-sql_translate_env.Redshift <- sql_translate_env.PostgreSQLConnection
-
-
-# DBI methods ------------------------------------------------------------------
-
-# Doesn't return TRUE for temporary tables
-#' @export
-db_has_table.PostgreSQLConnection <- function(con, table, ...) {
-  table %in% db_list_tables(con)
+sql_expr_matches.PqConnection <- function(con, x, y) {
+  # https://www.postgresql.org/docs/current/functions-comparison.html
+  build_sql(x, " IS NOT DISTINCT FROM ", y, con = con)
 }
-
 #' @export
-db_begin.PostgreSQLConnection <- function(con, ...) {
-  dbExecute(con, "BEGIN TRANSACTION")
-}
-
-#' @export
-db_write_table.PostgreSQLConnection <- function(con, table, types, values,
-                                                temporary = TRUE, ...) {
-
-  db_create_table(con, table, types, temporary = temporary)
-
-  if (nrow(values) == 0)
-    return(NULL)
-
-  cols <- lapply(values, escape, collapse = NULL, parens = FALSE, con = con)
-  col_mat <- matrix(unlist(cols, use.names = FALSE), nrow = nrow(values))
-
-  rows <- apply(col_mat, 1, paste0, collapse = ", ")
-  values <- paste0("(", rows, ")", collapse = "\n, ")
-
-  sql <- build_sql("INSERT INTO ", as.sql(table), " VALUES ", sql(values), con = con)
-  dbExecute(con, sql)
-
-  table
-}
-
-#' @export
-db_query_fields.PostgreSQLConnection <- function(con, sql, ...) {
-  fields <- build_sql(
-    "SELECT * FROM ", sql_subquery(con, sql), " WHERE 0=1",
-    con = con
-  )
-
-  qry <- dbSendQuery(con, fields)
-  on.exit(dbClearResult(qry))
-
-  dbGetInfo(qry)$fieldDescription[[1]]$name
-}
+sql_expr_matches.PostgreSQL <- sql_expr_matches.PqConnection
 
 # http://www.postgresql.org/docs/9.3/static/sql-explain.html
 #' @export
-db_explain.PostgreSQLConnection <- function(con, sql, format = "text", ...) {
+sql_query_explain.PqConnection <- function(con, sql, format = "text", ...) {
   format <- match.arg(format, c("text", "json", "yaml", "xml"))
 
-  exsql <- build_sql(
+  build_sql(
     "EXPLAIN ",
     if (!is.null(format)) sql(paste0("(FORMAT ", format, ") ")),
     sql,
     con = con
   )
-  expl <- dbGetQuery(con, exsql)
-
-  paste(expl[[1]], collapse = "\n")
 }
-
 #' @export
-db_explain.PostgreSQL <- db_explain.PostgreSQLConnection
+sql_query_explain.PostgreSQL <- sql_query_explain.PqConnection
 
-#' @export
-db_explain.PqConnection <- db_explain.PostgreSQLConnection
-
-globalVariables(c("strpos", "%::%", "%FROM%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY"))
+globalVariables(c("strpos", "%::%", "%FROM%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY", "DATE_TRUNC", "INTERVAL"))

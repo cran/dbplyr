@@ -1,27 +1,83 @@
-# select and rename -----------------------------------------------------------
-
-#' @importFrom dplyr select
+#' Subset, rename, and reorder columns using their names
+#'
+#' @description
+#' These are methods for the dplyr [select()], [rename()], and [relocate()]
+#' generics. They generate the `SELECT` clause of the SQL query.
+#'
+#' These functions do not support predicate functions, i.e. you can
+#' not use `where(is.numeric)` to select all numeric variables.
+#'
+#' @inheritParams arrange.tbl_lazy
+#' @inheritParams dplyr::select
 #' @export
+#' @importFrom dplyr select
+#' @examples
+#' library(dplyr, warn.conflicts = FALSE)
+#'
+#' db <- memdb_frame(x = 1, y = 2, z = 3)
+#' db %>% select(-y) %>% show_query()
+#' db %>% relocate(z) %>% show_query()
+#' db %>% rename(first = x, last = z) %>% show_query()
 select.tbl_lazy <- function(.data, ...) {
-  dots <- quos(...)
-
-  old_vars <- op_vars(.data$ops)
-  new_vars <- tidyselect::vars_select(old_vars, !!!dots, .include = op_grps(.data$ops))
+  sim_data <- simulate_vars(.data)
+  loc <- tidyselect::eval_select(
+    expr(c(...)), sim_data,
+    include = op_grps(.data$ops)
+  )
+  new_vars <- set_names(names(sim_data)[loc], names(loc))
 
   .data$ops <- op_select(.data$ops, syms(new_vars))
   .data
 }
 
+#' @rdname select.tbl_lazy
 #' @importFrom dplyr rename
 #' @export
 rename.tbl_lazy <- function(.data, ...) {
-  dots <- quos(...)
+  sim_data <- simulate_vars(.data)
+  loc <- tidyselect::eval_rename(expr(c(...)), sim_data)
 
-  old_vars <- op_vars(.data$ops)
-  new_vars <- tidyselect::vars_rename(old_vars, !!!dots)
+  new_vars <- set_names(names(sim_data), names(sim_data))
+  names(new_vars)[loc] <- names(loc)
 
   .data$ops <- op_select(.data$ops, syms(new_vars))
   .data
+}
+
+#' @rdname select.tbl_lazy
+#' @importFrom dplyr rename_with
+#' @importFrom tidyselect everything
+#' @inheritParams dplyr::rename_with
+#' @export
+rename_with.tbl_lazy <- function(.data, .fn, .cols = everything(), ...) {
+  .fn <- as_function(.fn)
+  cols <- tidyselect::eval_select(enquo(.cols), simulate_vars(.data))
+
+  new_vars <- set_names(op_vars(.data))
+  names(new_vars)[cols] <- .fn(new_vars[cols], ...)
+
+  .data$ops <- op_select(.data$ops, syms(new_vars))
+  .data
+}
+
+#' @rdname select.tbl_lazy
+#' @importFrom dplyr relocate
+#' @inheritParams dplyr::relocate
+#' @export
+relocate.tbl_lazy <- function(.data, ..., .before = NULL, .after = NULL) {
+  vars <- simulate_vars(.data)
+  new_vars <- dplyr::relocate(
+    simulate_vars(.data),
+    ...,
+    .before = {{.before}},
+    .after = {{.after}}
+  )
+  .data$ops <- op_select(.data$ops, syms(set_names(names(new_vars))))
+  .data
+}
+
+simulate_vars <- function(x) {
+  as_tibble(rep_named(op_vars(x), list(logical())))
 }
 
 # op_select ---------------------------------------------------------------
@@ -74,7 +130,8 @@ op_grps.op_select <- function(op) {
   old2new <- set_names(names(new2old), new2old)
 
   grps <- op_grps(op$x)
-  grps[grps %in% names(old2new)] <- old2new[grps]
+  renamed <- grps %in% names(old2new)
+  grps[renamed] <- old2new[grps[renamed]]
   grps
 }
 

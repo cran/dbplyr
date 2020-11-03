@@ -22,10 +22,17 @@ test_that("can refer to fresly created values", {
     collect()
   expect_equal(out1, tibble(x1 = 1, x2 = 2, x3 = 3, x4 = 4))
 
-  out2 <- memdb_frame(x = 1) %>%
-    mutate(x = x + 1, x = x + 1, x = x + 1) %>%
-    collect()
-  expect_equal(out2, tibble(x = 4))
+  out2 <- memdb_frame(x = 1, .name = "multi_mutate") %>%
+    mutate(x = x + 1, x = x + 2, x = x + 4)
+  expect_equal(collect(out2), tibble(x = 8))
+  expect_snapshot(show_query(out2))
+})
+
+test_that("transmute includes all needed variables", {
+  lf <- lazy_frame(x = 1, y = 2)
+  out <- transmute(lf, x = x / 2, x2 = x + y)
+  expect_named(out$ops$x$args$vars, c("x", "y"))
+  expect_snapshot(out)
 })
 
 test_that("queries are not nested unnecessarily", {
@@ -135,23 +142,15 @@ test_that("quoting for rendering mutated grouped table", {
 test_that("mutate generates subqueries as needed", {
   lf <- lazy_frame(x = 1, con = simulate_sqlite())
 
-  reg <- list(
-    inplace = lf %>% mutate(x = x + 1, x = x + 1),
-    increment = lf %>% mutate(x1 = x + 1, x2 = x1 + 1)
-  )
-
-  expect_known_output(print(reg), test_path("sql/mutate-subqueries.sql"))
+  expect_snapshot(lf %>% mutate(x = x + 1, x = x + 1))
+  expect_snapshot(lf %>% mutate(x1 = x + 1, x2 = x1 + 1))
 })
 
 test_that("mutate collapses over nested select", {
   lf <- lazy_frame(g = 0, x = 1, y = 2)
 
-  reg <- list(
-    xy = lf %>% select(x:y) %>% mutate(x = x * 2, y = y * 2),
-    yx = lf %>% select(y:x) %>% mutate(x = x * 2, y = y * 2)
-  )
-
-  expect_known_output(print(reg), test_path("sql/mutate-select-collapse.sql"))
+  expect_snapshot(lf %>% select(x:y) %>% mutate(x = x * 2, y = y * 2))
+  expect_snapshot(lf %>% select(y:x) %>% mutate(x = x * 2, y = y * 2))
 })
 
 # sql_build ---------------------------------------------------------------
