@@ -37,9 +37,8 @@ check_collapse <- function(collapse) {
   if (is.null(collapse))
     return()
 
-  stop(
-    "`collapse` not supported in DB translation of `paste()`.\n",
-    "Please use str_flatten() instead",
-    call. = FALSE
-  )
+  cli_abort(c(
+    "{.arg collapse} not supported in DB translation of {.fun paste}.",
+    i = "Please use {.fun str_flatten} instead."
+  ))
 }

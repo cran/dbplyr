@@ -1,3 +1,11 @@
+test_that("base_no_win inclues all aggregates and window funcitons", {
+  # All aggregates must be included in window functions
+  expect_equal(setdiff(names(base_agg), names(base_win)), character())
+
+  # All window functions all need to be in no_in
+  expect_equal(setdiff(names(base_win), names(base_no_win)), character())
+})
+
 # mathematics --------------------------------------------------------
 
 test_that("basic arithmetic is correct", {
@@ -11,6 +19,17 @@ test_that("basic arithmetic is correct", {
 
 test_that("small numbers aren't converted to 0", {
   expect_equal(translate_sql(1e-9), sql("1e-09"))
+})
+
+test_that("unary plus works with numbers", {
+  expect_equal(translate_sql(+10L), sql("10"))
+  expect_equal(translate_sql(x == +10), sql('`x` = 10.0'))
+  expect_equal(translate_sql(x %in% c(+1L, 0L)), sql('`x` IN (1, 0)'))
+})
+
+test_that("unary plus works for non-numeric expressions", {
+  expect_equal(translate_sql(+(1L + 2L)), sql("(1 + 2)"))
+  expect_equal(translate_sql(mean(x, na.rm = TRUE), window = FALSE), sql('AVG(`x`)'))
 })
 
 test_that("unary minus flips sign of number", {

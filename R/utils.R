@@ -55,7 +55,7 @@ succeeds <- function(x, quiet = FALSE) {
     },
     error = function(e) {
       if (!quiet)
-        message("Error: ", e$message)
+        message("Error: ", e$message) # nocov
       FALSE
     }
   )
@@ -68,7 +68,7 @@ c_character <- function(...) {
   }
 
   if (!is.character(x)) {
-    stop("Character input expected", call. = FALSE)
+    cli_abort("Character input expected")
   }
 
   x
@@ -76,24 +76,32 @@ c_character <- function(...) {
 
 cat_line <- function(...) cat(paste0(..., "\n"), sep = "")
 
+# nocov start
 res_warn_incomplete <- function(res, hint = "n = -1") {
   if (dbHasCompleted(res)) return()
 
   rows <- big_mark(dbGetRowCount(res))
-  warning("Only first ", rows, " results retrieved. Use ", hint, " to retrieve all.",
-    call. = FALSE)
+  cli::cli_warn("Only first {rows} results retrieved. Use {hint} to retrieve all.")
 }
 
 hash_temp <- function(name) {
   name <- ident(paste0("#", name))
-  inform(
+  cli::cli_inform(
     paste0("Created a temporary table named ", name),
     class = c("dbplyr_message_temp_table", "dbplyr_message")
   )
   name
 }
+# nocov end
 
 # Helper for testing
 local_methods <- function(..., .frame = caller_env()) {
   local_bindings(..., .env = global_env(), .frame = .frame)
+}
+
+assert_flag <- function(x, arg, call = caller_env()) {
+  vctrs::vec_assert(x, logical(), size = 1L)
+  if (is.na(x)) {
+    cli_abort("{.arg {arg}} must not be NA.", call = call)
+  }
 }

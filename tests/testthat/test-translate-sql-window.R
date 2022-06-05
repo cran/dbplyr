@@ -1,12 +1,3 @@
-test_that("aggregation functions warn once if na.rm = FALSE", {
-  local_con(simulate_dbi())
-  sql_mean <- win_aggregate("MEAN")
-
-  expect_warning(sql_mean("x"), "Missing values")
-  expect_warning(sql_mean("x"), NA)
-  expect_warning(sql_mean("x", na.rm = TRUE), NA)
-})
-
 test_that("window functions without group have empty over", {
   expect_equal(translate_sql(n()), sql("COUNT(*) OVER ()"))
   expect_equal(translate_sql(sum(x, na.rm = TRUE)), sql("SUM(`x`) OVER ()"))
@@ -20,6 +11,13 @@ test_that("aggregating window functions ignore order_by", {
   expect_equal(
     translate_sql(sum(x, na.rm = TRUE), vars_order = "x"),
     sql("SUM(`x`) OVER ()")
+  )
+})
+
+test_that("count uses order_by if frame is used", {
+  expect_equal(
+    translate_sql(n(), vars_order = "x", vars_frame = c(-2, 1)),
+    sql("COUNT(*) OVER (ORDER BY `x` ROWS BETWEEN 2 PRECEDING AND 1 FOLLOWING)")
   )
 })
 
@@ -76,6 +74,33 @@ test_that("can override frame of recycled functions", {
   )
 })
 
+test_that("frame is checked", {
+  expect_snapshot(
+    error = TRUE,
+    translate_sql(sum(x, na.rm = TRUE), vars_frame = c(1, 0))
+  )
+})
+
+test_that("win_rank works", {
+  local_con(simulate_dbi())
+  sql_row_number <- win_rank("ROW_NUMBER")
+  expect_equal(
+    sql_row_number("x"),
+    sql("ROW_NUMBER() OVER (ORDER BY `x`)")
+  )
+})
+
+test_that("win_rank works", {
+  local_con(simulate_dbi())
+  sql_cumsum <- win_cumulative("SUM")
+
+  expect_equal(
+    sql_cumsum(ident("x"), "y"),
+    sql("SUM(`x`) OVER (ORDER BY `y` ROWS UNBOUNDED PRECEDING)")
+  )
+})
+
+
 # win_over ----------------------------------------------------------------
 
 test_that("over() only requires first argument", {
@@ -97,3 +122,159 @@ test_that("multiple group by or order values don't have parens", {
   )
 })
 
+
+# window_frame ------------------------------------------------------------
+
+test_that("window_frame()", {
+  lf <- lazy_frame(x = runif(10), y = 1:10)
+
+  expect_snapshot(
+    lf %>%
+      window_frame(-3, 0) %>%
+      window_order(x) %>%
+      mutate(z = sum(y, na.rm = TRUE)) %>%
+      show_query()
+  )
+
+  expect_snapshot(
+    lf %>%
+      window_frame(-3) %>%
+      window_order(x) %>%
+      mutate(z = sum(y, na.rm = TRUE)) %>%
+      show_query()
+  )
+})
+
+test_that("window_frame() checks arguments", {
+  skip_if(getRversion() <= '3.5.0', "R too old")
+  lf <- lazy_frame(x = runif(10), y = 1:10)
+
+  expect_snapshot(error = TRUE, window_frame(lf, "a"))
+  expect_snapshot(error = TRUE, window_frame(lf, 1:2))
+
+  expect_snapshot(error = TRUE, window_frame(lf, 1, "a"))
+  expect_snapshot(error = TRUE, window_frame(lf, 1, 1:2))
+})
+
+
+# named windows -----------------------------------------------------------
+
+test_that("names windows automatically", {
+  lf <- lazy_frame(
+    col1 = runif(3),
+    col2 = runif(3),
+    col3 = runif(3),
+    col4 = runif(3),
+    part = c("a", "a", "b"),
+    ord = 3:1,
+    con = simulate_sqlite()
+  ) %>%
+    group_by(part) %>%
+    window_order(ord)
+
+  lf1 <- lf %>%
+    transmute(
+      across(c(col1, col2), sum, na.rm = TRUE),
+      across(c(col3, col4), ~ order_by(desc(ord), cumsum(.x)))
+    )
+
+  sql_list <- get_select_sql(lf1$lazy_query$select, "mutate", op_vars(lf), simulate_sqlite())
+  expect_equal(
+    sql_list$window_sql,
+    sql(
+      "`win1` AS (PARTITION BY `part`)",
+      "`win2` AS (PARTITION BY `part` ORDER BY `ord` DESC ROWS UNBOUNDED PRECEDING)"
+    )
+  )
+  expect_equal(
+    sql_list$select_sql,
+    sql(
+      part = ident("part"),
+      col1 = sql("SUM(`col1`) OVER `win1`"),
+      col2 = sql("SUM(`col2`) OVER `win1`"),
+      col3 = sql("SUM(`col3`) OVER `win2`"),
+      col4 = sql("SUM(`col4`) OVER `win2`")
+    )
+  )
+
+  # Different order does not confuse naming of windows
+  lf2 <- lf %>%
+    transmute(
+      col1 = sum(col1, na.rm = TRUE),
+      col3 = order_by(desc(ord), cumsum(col3)),
+      col2 = sum(col2, na.rm = TRUE),
+      col4 = order_by(desc(ord), cumsum(col4))
+    )
+
+  sql_list <- get_select_sql(lf2$lazy_query$select, "mutate", op_vars(lf), simulate_sqlite())
+  expect_equal(
+    sql_list$window_sql,
+    sql(
+      "`win1` AS (PARTITION BY `part`)",
+      "`win2` AS (PARTITION BY `part` ORDER BY `ord` DESC ROWS UNBOUNDED PRECEDING)"
+    )
+  )
+  expect_equal(
+    sql_list$select_sql,
+    sql(
+      part = ident("part"),
+      col1 = sql("SUM(`col1`) OVER `win1`"),
+      col3 = sql("SUM(`col3`) OVER `win2`"),
+      col2 = sql("SUM(`col2`) OVER `win1`"),
+      col4 = sql("SUM(`col4`) OVER `win2`")
+    )
+  )
+})
+
+test_that("only name windows if they appear multiple times", {
+  lf <- lazy_frame(
+    col1 = runif(3),
+    col2 = runif(3),
+    col3 = runif(3),
+    part = c("a", "a", "b"),
+    ord = 3:1,
+    con = simulate_sqlite()
+  ) %>%
+    group_by(part) %>%
+    window_order(ord) %>%
+    transmute(
+      across(c(col1, col2), sum, na.rm = TRUE),
+      across(c(col3), ~ order_by(desc(ord), cumsum(.x)))
+    )
+
+  sql_list <- get_select_sql(lf$lazy_query$select, "mutate", op_vars(lf), simulate_sqlite())
+  expect_equal(sql_list$window_sql, sql("`win1` AS (PARTITION BY `part`)"))
+  expect_equal(
+    sql_list$select_sql,
+    sql(
+      part = ident("part"),
+      col1 = sql("SUM(`col1`) OVER `win1`"),
+      col2 = sql("SUM(`col2`) OVER `win1`"),
+      col3 = sql("SUM(`col3`) OVER (PARTITION BY `part` ORDER BY `ord` DESC ROWS UNBOUNDED PRECEDING)")
+    )
+  )
+})
+
+test_that("name windows only if supported", {
+  lf <- lazy_frame(
+    col1 = runif(3),
+    col2 = runif(3),
+    part = c("a", "a", "b"),
+    con = simulate_hana()
+  ) %>%
+    group_by(part) %>%
+    transmute(
+      across(c(col1, col2), sum, na.rm = TRUE)
+    )
+
+  sql_list <- get_select_sql(lf$lazy_query$select, "mutate", op_vars(lf), simulate_hana())
+  expect_equal(sql_list$window_sql, character())
+  expect_equal(
+    sql_list$select_sql,
+    sql(
+      part = ident("part"),
+      col1 = sql("SUM(`col1`) OVER (PARTITION BY `part`)"),
+      col2 = sql("SUM(`col2`) OVER (PARTITION BY `part`)")
+    )
+  )
+})

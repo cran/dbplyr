@@ -61,7 +61,7 @@
     Code
       sql_query_wrap(con, sql("SELECT * FROM foo"))
     Output
-      <SQL> (SELECT * FROM foo) `q03`
+      <SQL> (SELECT * FROM foo) `q01`
 
 ---
 
@@ -83,5 +83,6 @@
       sql_query_save(con, sql("SELECT * FROM foo"), in_schema("temp", "tbl"))
     Output
       <SQL> CREATE TEMPORARY TABLE 
-      `temp`.`tbl` AS SELECT * FROM foo
+      `temp`.`tbl` AS
+      SELECT * FROM foo
 

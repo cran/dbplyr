@@ -31,6 +31,8 @@
 #'   higher up (and your database doesn't support nested transactions.)
 #' @inheritParams dplyr::copy_to
 #' @inherit arrange.tbl_lazy return
+#' @seealso [copy_inline()] to use small data in an SQL query without actually
+#'   writing to a table.
 #' @examples
 #' library(dplyr, warn.conflicts = FALSE)
 #'
@@ -52,7 +54,7 @@ copy_to.src_sql <- function(dest, df, name = deparse(substitute(df)),
   assert_that(is.flag(temporary))
 
   if (!is.data.frame(df) && !inherits(df, "tbl_sql")) {
-    stop("`df` must be a local dataframe or a remote tbl_sql", call. = FALSE)
+    cli_abort("{.var df} must be a local dataframe or a remote tbl_sql")
   }
 
   name <- as.sql(name, con = dest$con)
@@ -81,7 +83,7 @@ copy_to.src_sql <- function(dest, df, name = deparse(substitute(df)),
       ...
     )
 
-    out <- tbl(dest, name)
+    out <- tbl_src_dbi(dest, name, vars = names(df))
   }
 
   invisible(out)
@@ -92,3 +94,265 @@ copy_to.src_sql <- function(dest, df, name = deparse(substitute(df)),
 auto_copy.tbl_sql <- function(x, y, copy = FALSE, ...) {
   copy_to(x$src, as.data.frame(y), unique_table_name(), ...)
 }
+
+#' Use a local data frame in a dbplyr query
+#'
+#' This is an alternative to [copy_to()] that does not need write access and
+#' is faster for small data.
+#'
+#' It writes the data directly in the SQL query via the `VALUES` clause.
+#'
+#' @seealso [copy_to()] to copy the data into a new database table.
+#' @export
+#' @param con A database connection.
+#' @param df A local data frame. The data is written directly in the SQL query
+#'   so it should be small.
+#' @return A `tbl_lazy`.
+#'
+#' @examples
+#' df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+#' con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+#'
+#' copy_inline(con, df)
+#'
+#' copy_inline(con, df) %>% dplyr::show_query()
+copy_inline <- function(con, df) {
+  if (!inherits(df, "data.frame")) {
+    cli_abort("{.var df} needs to be a data.frame.")
+  }
+
+  if (ncol(df) == 0) {
+    cli_abort("{.var df} needs at least one column.")
+  }
+
+  # This workaround is needed because `tbl_sql()` applies `as.sql()` on `from`
+  subclass <- class(con)[[1]] # prefix added by dplyr::make_tbl
+  dplyr::make_tbl(
+    c(subclass, "sql", "lazy"),
+    src = src_dbi(con),
+    from = df,
+    lazy_query = lazy_values_query(df),
+    vars = colnames(df)
+  )
+}
+
+lazy_values_query <- function(df) {
+  lazy_query(
+    query_type = "values",
+    x = df,
+    group_vars = character(),
+    order_vars = NULL,
+    frame = NULL
+  )
+}
+
+#' @export
+sql_build.lazy_values_query <- function(op, con, ...) {
+  op
+}
+
+#' @export
+sql_render.lazy_values_query <- function(query, con = query$src$con, ..., subquery = FALSE, lvl = 0, cte = FALSE) {
+  sql_values_subquery(con, query$x, lvl = lvl)
+}
+
+#' @export
+flatten_query.lazy_values_query <- function(qry, query_list) {
+  querylist_reuse_query(qry, query_list)
+}
+
+#' @export
+op_vars.lazy_values_query <- function(op) {
+  colnames(op$x)
+}
+
+sql_values_subquery <- function(con, df, lvl = 0, ...) {
+  check_dots_empty()
+  UseMethod("sql_values_subquery")
+}
+
+#' @export
+sql_values_subquery.DBIConnection <- function(con, df, lvl = 0, ...) {
+  sql_values_subquery_default(con, df, lvl = lvl, row = FALSE)
+}
+
+sql_values_subquery_default <- function(con, df, lvl, row) {
+  df <- values_prepare(con, df)
+  if (nrow(df) == 0L) {
+    return(sql_values_zero_rows(con, df, lvl))
+  }
+
+  # The query consists of two parts:
+  # 1) An outer select which converts the values to the correct types. This needs
+  # to use the translation of `as.<column type>(<column name>)` (e.g. `as.numeric(mpg)`)
+  # because some backends need a special translation for some types e.g. casting
+  # to logical/bool in MySQL
+  #   `IF(<column name>, TRUE, FALSE)`
+  # This is done with the help of `sql_cast_dispatch()` via dispatch on the
+  # column type. The explicit cast is required so that joins work e.g. on date
+  # columns in Postgres.
+  # 2) A subquery which is the union of:
+  #   a) a zero row table which is just required to name the columns. This is
+  #      necessary as e.g. SQLite cannot name `VALUES`.
+  #   b) `VALUES` clause
+  sim_data <- rep_named(colnames(df), list(NULL))
+  cols_clause <- escape(sim_data, con = con, parens = FALSE, collapse = NULL)
+
+  null_row_query <- select_query(
+    from = ident(),
+    select = sql(cols_clause),
+    where = sql("0 = 1")
+  )
+
+  rows_clauses <- sql_values_clause(con, df, row = row)
+  rows_query <- sql_format_clauses(rows_clauses, lvl = lvl + 1, con = con)
+
+  union_query <- set_op_query(null_row_query, rows_query, type = "UNION", all = TRUE)
+  subquery <- sql_render(union_query, con = con, lvl = lvl + 1)
+
+  sql_query_select(
+    con,
+    select = sql_values_select(con, df),
+    from = sql_subquery(con, subquery, name = "values_table", lvl = lvl),
+    lvl = lvl
+  )
+}
+
+sql_values_subquery_column_alias <- function(con, df, lvl) {
+  df <- values_prepare(con, df)
+  if (nrow(df) == 0L) {
+    return(sql_values_zero_rows(con, df, lvl))
+  }
+
+  # The `SELECT` clause converts the values to the correct types. This needs
+  # to use the translation of `as.<column type>(<column name>)` (e.g. `as.numeric(mpg)`)
+  # because some backends need a special translation for some types e.g. casting
+  # to logical/bool in MySQL
+  #   `IF(<column name>, TRUE, FALSE)`
+  # This is done with the help of `sql_cast_dispatch()` via dispatch on the
+  # column type. The explicit cast is required so that joins work e.g. on date
+  # columns in Postgres.
+  # The `FROM` clause is simply the `VALUES` clause with table and column alias
+  rows_clauses <- sql_values_clause(con, df, row = FALSE)
+  rows_query <- sql_format_clauses(rows_clauses, lvl = lvl + 1, con = con)
+
+  table_alias_sql <- sql(paste0("drvd(", escape(ident(colnames(df)), con = con), ")"))
+
+  if (grepl("\\n", rows_query)) {
+    rows_query <- sql(paste0("(\n", rows_query, "\n", indent_lvl(") AS ", lvl), table_alias_sql))
+  } else {
+    # indent is not perfect but okay
+    rows_query <- sql(paste0("(", rows_query, ") AS ", table_alias_sql))
+  }
+
+  sql_query_select(
+    con,
+    select = sql_values_select(con, df),
+    from = rows_query,
+    lvl = lvl
+  )
+}
+
+sql_values_clause <- function(con, df, row = FALSE) {
+  escaped_values <- purrr::map(df, escape, con = con, collapse = NULL, parens = FALSE)
+  rows <- rlang::exec(paste, !!!escaped_values, sep = ", ")
+  rows_sql <- sql(paste0(if (row) "ROW", "(", rows, ")"))
+
+  list(sql_clause("VALUES", rows_sql))
+}
+
+sql_values_zero_rows <- function(con, df, lvl) {
+  if (nrow(df) != 0L) {
+    # TODO use `cli_abort()` after https://github.com/r-lib/rlang/issues/1386
+    # is fixed
+    abort("`df` does not have 0 rows", .internal = TRUE)
+  }
+
+  typed_cols <- purrr::map_chr(
+    vctrs::vec_init(df),
+    ~ {
+      cast_expr <- call2(sql_cast_dispatch(.x), NA)
+      translate_sql(!!cast_expr, con = con)
+    }
+  )
+
+  query <- select_query(
+    from = ident(),
+    select = sql(typed_cols),
+    where = sql("0 = 1")
+  )
+
+  sql_render(query, con = con, lvl = lvl)
+}
+
+sql_values_select <- function(con, df) {
+  typed_cols <- purrr::map2_chr(
+    df, colnames(df),
+    ~ {
+      cast_expr <- call2(sql_cast_dispatch(.x), ident(.y))
+      translate_sql(!!cast_expr, con = con)
+    }
+  )
+  sql_vector(typed_cols, parens = FALSE, collapse = NULL, con = con)
+}
+
+values_prepare <- function(con, df) {
+  UseMethod("values_prepare")
+}
+
+#' @export
+values_prepare.DBIConnection <- function(con, df) {
+  df
+}
+
+# This
+sql_cast_dispatch <- function(x) {
+  UseMethod("sql_cast_dispatch")
+}
+
+#' @export
+sql_cast_dispatch.sql <- function(x) {
+  expr(as.character)
+}
+
+#' @export
+sql_cast_dispatch.logical <- function(x) {
+  expr(as.logical)
+}
+
+#' @export
+sql_cast_dispatch.integer <- function(x) {
+  expr(as.integer)
+}
+
+#' @export
+sql_cast_dispatch.numeric <- function(x) {
+  expr(as.numeric)
+}
+
+#' @export
+sql_cast_dispatch.character <- function(x) {
+  expr(as.character)
+}
+
+#' @export
+sql_cast_dispatch.factor <- function(x) {
+  expr(as.character)
+}
+
+#' @export
+sql_cast_dispatch.Date <- function(x) {
+  expr(as.Date)
+}
+
+#' @export
+sql_cast_dispatch.POSIXct <- function(x) {
+  expr(as.POSIXct)
+}
+
+#' @export
+sql_cast_dispatch.integer64 <- function(x) {
+  expr(as.integer64)
+}
+
+globalVariables(c("as.integer64"))

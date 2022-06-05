@@ -1,5 +1,5 @@
 # Copy in deprecated progress_estimated() from dplyr
-
+# nocov start
 progress_estimated <- function(n, min_time = 0) {
   Progress$new(n, min_time = min_time)
 }
@@ -43,7 +43,7 @@ Progress <- R6::R6Class("Progress",
       "Process one element"
       if (self$stopped) return(self)
 
-      if (self$i == self$n) abort("No more ticks")
+      if (self$i == self$n) cli_abort("No more ticks")
       self$i <- self$i + 1
       self
     },
@@ -111,3 +111,4 @@ show_time <- function(x) {
 }
 
 now <- function() proc.time()[[3]]
+# nocov end

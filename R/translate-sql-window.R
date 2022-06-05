@@ -53,11 +53,11 @@ win_over <- function(expr, partition = NULL, order = NULL, frame = NULL, con = s
   }
   if (length(frame) > 0) {
     if (length(order) == 0) {
-      warning(
-        "Windowed expression '", expr, "' does not have explicit order.\n",
-        "Please use arrange() or window_order() to make determinstic.",
-        call. = FALSE
-      )
+      # TODO use {.code {expr}} after https://github.com/r-lib/cli/issues/422 is fixed
+      cli::cli_warn(c(
+        "Windowed expression `{expr}` does not have explicit order.",
+        i = "Please use {.fun arrange} or {.fun window_order} to make deterministic."
+      ))
     }
 
     if (is.numeric(frame)) frame <- rows(frame[1], frame[2])
@@ -65,13 +65,63 @@ win_over <- function(expr, partition = NULL, order = NULL, frame = NULL, con = s
   }
 
   over <- sql_vector(purrr::compact(list(partition, order, frame)), parens = TRUE, con = con)
+
+  if (sql_context$register_windows) {
+    win_register(over)
+  } else {
+    over <- win_get(over, con)
+  }
   sql <- build_sql(expr, " OVER ", over, con = con)
 
   sql
 }
 
+win_register_activate <- function() {
+  sql_context$register_windows <- TRUE
+}
+
+win_register_deactivate <- function() {
+  sql_context$register_windows <- FALSE
+}
+
+win_register <- function(over) {
+  sql_context$windows <- append(sql_context$windows, over)
+}
+
+win_register_names <- function() {
+  windows <- sql_context$windows %||% character()
+
+  window_count <- vctrs::vec_count(windows, sort = "location")
+  window_count <- vctrs::vec_slice(window_count, window_count$count > 1)
+  if (nrow(window_count) > 0) {
+    window_count$name <- ident(paste0("win", seq_along(window_count$key)))
+  } else {
+    window_count$name <- ident()
+  }
+  window_count$key <- window_count$key
+
+  sql_context$window_names <- window_count
+  window_count
+}
+
+win_get <- function(over, con) {
+  windows <- sql_context$window_names
+
+  if (vctrs::vec_in(over, windows$key)) {
+    id <- vctrs::vec_match(over, windows$key)
+    ident(windows$name[[id]])
+  } else {
+    over
+  }
+}
+
+win_reset <- function() {
+  sql_context$window_names <- NULL
+  sql_context$windows <- list()
+}
+
 rows <- function(from = -Inf, to = 0) {
-  if (from >= to) stop("from must be less than to", call. = FALSE)
+  if (from >= to) cli_abort("{.arg from} ({from}) must be less than {.arg to} ({to})")
 
   dir <- function(x) if (x < 0) "PRECEDING" else "FOLLOWING"
   val <- function(x) if (is.finite(x)) as.integer(abs(x)) else "UNBOUNDED"
@@ -106,9 +156,8 @@ win_rank <- function(f) {
 #' @export
 win_aggregate <- function(f) {
   force(f)
-  warned <- FALSE
   function(x, na.rm = FALSE) {
-    warned <<- check_na_rm(f, na.rm, warned)
+    check_na_rm(na.rm)
     frame <- win_current_frame()
 
     win_over(
@@ -162,10 +211,8 @@ win_absent <- function(f) {
   force(f)
 
   function(...) {
-    stop(
-      "Window function `", f, "()` is not supported by this database",
-      call. = FALSE
-    )
+    # TODO use {.fun dbplyr::{fn}} after https://github.com/r-lib/cli/issues/422 is fixed
+    cli_abort("Window function `{f}()` is not supported by this database.")
   }
 }
 
@@ -181,6 +228,10 @@ sql_context$order_by <- NULL
 sql_context$con <- NULL
 # Used to carry additional information needed for special cases
 sql_context$context <- list()
+
+sql_context$register_windows <- FALSE
+sql_context$windows <- NULL
+sql_context$window_names <- NULL
 
 
 set_current_con <- function(con) {
@@ -253,19 +304,15 @@ local_context <- function(x, env = parent.frame()) {
 # Where translation -------------------------------------------------------
 
 uses_window_fun <- function(x, con) {
-  if (is.null(x)) return(FALSE)
-  if (is.list(x)) {
-    calls <- unlist(lapply(x, all_calls))
-  } else {
-    calls <- all_calls(x)
-  }
+  stopifnot(is.list(x))
 
+  calls <- unlist(lapply(x, all_calls))
   win_f <- ls(envir = dbplyr_sql_translation(con)$window)
   any(calls %in% win_f)
 }
 
 common_window_funs <- function() {
-  ls(dbplyr_sql_translation(NULL)$window)
+  ls(dbplyr_sql_translation(NULL)$window) # nocov
 }
 
 #' @noRd
@@ -302,7 +349,7 @@ translate_window_where <- function(expr, window_funs = common_window_funs()) {
 
       }
     },
-    abort(glue("Unknown type: ", typeof(expr)))
+    cli_abort("Unknown type: {typeof(expr)}") # nocov
   )
 }
 

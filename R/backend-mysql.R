@@ -1,7 +1,7 @@
 #' Backend: MySQL/MariaDB
 #'
 #' @description
-#' See `vignette("translate-function")` and `vignette("translate-verb")` for
+#' See `vignette("translation-function")` and `vignette("translation-verb")` for
 #' details of overall translation technology. Key differences for this backend
 #' are:
 #'
@@ -55,7 +55,7 @@ sql_translation.MariaDBConnection <- function(con) {
   sql_variant(
     sql_translator(.parent = base_scalar,
       as.logical = function(x) {
-        sql_expr(IF(x, TRUE, FALSE))
+        sql_expr(IF(!!x, TRUE, FALSE))
       },
       as.character = sql_cast("CHAR"),
 
@@ -111,7 +111,7 @@ sql_table_analyze.MySQLConnection <- sql_table_analyze.MariaDBConnection
 #' @export
 sql_query_join.MariaDBConnection <- function(con, x, y, vars, type = "inner", by = NULL, ...) {
   if (identical(type, "full")) {
-    stop("MySQL does not support full joins", call. = FALSE)
+    cli_abort("MySQL does not support full joins")
   }
   NextMethod()
 }
@@ -131,5 +131,55 @@ sql_expr_matches.MySQL <- sql_expr_matches.MariaDBConnection
 #' @export
 sql_expr_matches.MySQLConnection <- sql_expr_matches.MariaDBConnection
 
-globalVariables(c("%separator%", "group_concat", "IF", "REGEXP_INSTR"))
+#' @export
+sql_values_subquery.MariaDBConnection <- function(con, df, lvl = 0, ...) {
+  sql_values_subquery_default(con, df, lvl = lvl, row = TRUE)
+}
 
+#' @export
+sql_values_subquery.MySQL <- sql_values_subquery.MariaDBConnection
+#' @export
+sql_values_subquery.MySQLConnection <- sql_values_subquery.MariaDBConnection
+
+#' @export
+sql_random.MariaDBConnection <- function(con) {
+  sql_expr(RAND())
+}
+#' @export
+sql_random.MySQLConnection <- sql_random.MariaDBConnection
+#' @export
+sql_random.MySQL <- sql_random.MariaDBConnection
+
+#' @export
+sql_query_update_from.MariaDBConnection <- function(con, x_name, y, by,
+                                                    update_values, ...,
+                                                    returning_cols = NULL) {
+  # https://stackoverflow.com/a/19346375/946850
+  parts <- rows_prep(con, x_name, y, by, lvl = 0)
+  update_cols <- sql_table_prefix(con, names(update_values), x_name)
+
+  clauses <- list(
+    sql_clause_update(x_name),
+    sql_clause("INNER JOIN", parts$from),
+    sql_clause_on(parts$where, lvl = 1),
+    sql_clause_set(update_cols, update_values),
+    sql_returning_cols(con, returning_cols, x_name)
+  )
+  sql_format_clauses(clauses, lvl = 0, con)
+}
+
+#' @export
+sql_query_update_from.MySQLConnection <- sql_query_update_from.MariaDBConnection
+#' @export
+sql_query_update_from.MySQL <- sql_query_update_from.MariaDBConnection
+
+#' @export
+supports_window_clause.MariaDBConnection <- function(con) {
+  TRUE
+}
+#' @export
+supports_window_clause.MySQLConnection <- supports_window_clause.MariaDBConnection
+#' @export
+supports_window_clause.MySQL <- supports_window_clause.MariaDBConnection
+
+globalVariables(c("%separator%", "group_concat", "IF", "REGEXP_INSTR", "RAND"))

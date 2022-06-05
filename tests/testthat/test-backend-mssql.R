@@ -17,6 +17,18 @@ test_that("custom scalar translated correctly", {
   expect_equal(translate_sql(substr(x, 1, 2)), sql("SUBSTRING(`x`, 1, 2)"))
   expect_equal(translate_sql(trimws(x)),       sql("LTRIM(RTRIM(`x`))"))
   expect_equal(translate_sql(paste(x, y)),     sql("`x` + ' ' + `y`"))
+  expect_equal(
+    translate_sql(if_else(x, "true", "false", "missing")),
+    sql("CASE WHEN `x` THEN 'true' WHEN NOT `x` THEN 'false' WHEN (`x` IS NULL) THEN 'missing' END")
+  )
+  expect_equal(
+    translate_sql(ifelse(x, "true", "false")),
+    sql("IIF(`x`, 'true', 'false')")
+  )
+  expect_equal(
+    translate_sql(if(x) "true" else "false"),
+    sql("IIF(`x`, 'true', 'false')")
+  )
 
   expect_error(translate_sql(bitwShiftL(x, 2L)), sql("not available"))
   expect_error(translate_sql(bitwShiftR(x, 2L)), sql("not available"))
@@ -45,6 +57,10 @@ test_that("custom aggregators translated correctly", {
   expect_error(translate_sql(cov(x), window = FALSE), "not available")
 
   expect_equal(translate_sql(str_flatten(x), window = FALSE), sql("STRING_AGG(`x`, '')"))
+  expect_equal(
+    translate_sql(quantile(x, 0.5, na.rm = TRUE), window = FALSE),
+    sql("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY `x`) OVER ()")
+  )
 })
 
 test_that("custom window functions translated correctly", {
@@ -73,11 +89,15 @@ test_that("custom lubridate functions translated correctly", {
   expect_equal(translate_sql(second(x)), sql("DATEPART(SECOND, `x`)"))
   expect_equal(translate_sql(month(x)), sql("DATEPART(MONTH, `x`)"))
   expect_equal(translate_sql(month(x, label = TRUE, abbr = FALSE)), sql("DATENAME(MONTH, `x`)"))
-  expect_error(translate_sql(month(x, abbr = TRUE, abbr = TRUE)))
+  expect_snapshot(error = TRUE, translate_sql(month(x, label = TRUE, abbr = TRUE)))
 
   expect_equal(translate_sql(quarter(x)), sql("DATEPART(QUARTER, `x`)"))
   expect_equal(translate_sql(quarter(x, with_year = TRUE)), sql("(DATENAME(YEAR, `x`) + '.' + DATENAME(QUARTER, `x`))"))
   expect_error(translate_sql(quarter(x, fiscal_start = 5)))
+})
+
+test_that("last_value_sql() translated correctly", {
+  expect_equal(last_value_sql(simulate_mssql(), "x"), sql("LAST_VALUE(`x`) IGNORE NULLS"))
 })
 
 # verb translation --------------------------------------------------------
@@ -102,13 +122,13 @@ test_that("convert between bit and boolean as needed", {
 
 test_that("handles ORDER BY in subqueries", {
   expect_snapshot(
-    sql_query_select(simulate_mssql(), "x", "y", order_by = "z", subquery = TRUE)
+    sql_query_select(simulate_mssql(), ident("x"), ident("y"), order_by = "z", subquery = TRUE)
   )
 })
 
 test_that("custom limit translation", {
   expect_snapshot(
-    sql_query_select(simulate_mssql(), "x", "y", order_by = "z", limit = 10)
+    sql_query_select(simulate_mssql(), ident("x"), ident("y"), order_by = ident("z"), limit = 10)
   )
 })
 
@@ -142,6 +162,112 @@ test_that("generates custom sql", {
   # Automatic renaming is handled upstream by db_collect()/db_copy_to()
   expect_snapshot(sql_query_save(con, sql("SELECT * FROM foo"), in_schema("schema", "tbl")))
   expect_snapshot(sql_query_save(con, sql("SELECT * FROM foo"), in_schema("schema", "tbl"), temporary = FALSE))
+
+  lf <- lazy_frame(x = 1:3, con = simulate_mssql())
+  expect_snapshot(lf %>% slice_sample(x))
+
+  expect_snapshot(copy_inline(con, tibble(x = 1:2, y = letters[1:2])) %>% remote_query())
+  expect_snapshot(copy_inline(con, trees) %>% remote_query())
+})
+
+test_that("`sql_query_insert()` is correct", {
+  df_y <- lazy_frame(
+    a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"),
+    con = simulate_mssql(),
+    .name = "df_y"
+  ) %>%
+    mutate(c = c + 1)
+
+  expect_snapshot(
+    sql_query_insert(
+      con = simulate_mssql(),
+      x_name = ident("df_x"),
+      y = df_y,
+      by = c("a", "b"),
+      conflict = "ignore",
+      returning_cols = c("a", b2 = "b")
+    )
+  )
+})
+
+test_that("`sql_query_append()` is correct", {
+  df_y <- lazy_frame(
+    a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"),
+    con = simulate_mssql(),
+    .name = "df_y"
+  ) %>%
+    mutate(c = c + 1)
+
+  expect_snapshot(
+    sql_query_append(
+      con = simulate_mssql(),
+      x_name = ident("df_x"),
+      y = df_y,
+      returning_cols = c("a", b2 = "b")
+    )
+  )
+})
+
+test_that("`sql_query_update_from()` is correct", {
+  df_y <- lazy_frame(
+    a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"),
+    con = simulate_mssql(),
+    .name = "df_y"
+  ) %>%
+    mutate(c = c + 1)
+
+  expect_snapshot(
+    sql_query_update_from(
+      con = simulate_mssql(),
+      x_name = ident("df_x"),
+      y = df_y,
+      by = c("a", "b"),
+      update_values = sql(
+        c = "COALESCE(`df_x`.`c`, `...y`.`c`)",
+        d = "`...y`.`d`"
+      ),
+      returning_cols = c("a", b2 = "b")
+    )
+  )
+})
+
+test_that("`sql_query_delete()` is correct", {
+  df_y <- lazy_frame(
+    a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"),
+    con = simulate_mssql(),
+    .name = "df_y"
+  ) %>%
+    mutate(c = c + 1)
+
+  expect_snapshot(
+    sql_query_delete(
+      con = simulate_mssql(),
+      x_name = ident("df_x"),
+      y = df_y,
+      by = c("a", "b"),
+      returning_cols = c("a", b2 = "b")
+    )
+  )
+})
+
+test_that("`sql_query_upsert()` is correct", {
+  df_y <- lazy_frame(
+    a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"),
+    con = simulate_mssql(),
+    .name = "df_y"
+  ) %>%
+    mutate(c = c + 1)
+
+  expect_snapshot(
+    sql_query_upsert(
+      con = simulate_mssql(),
+      x_name = ident("df_x"),
+      y = df_y,
+      by = c("a", "b"),
+      update_cols = c("c", "d"),
+      returning_cols = c("a", b2 = "b")
+    )
+  )
 })
 
 # Live database -----------------------------------------------------------
@@ -155,8 +281,8 @@ test_that("can copy_to() and compute() with temporary tables (#272)", {
   )
   expect_equal(db %>% pull(), 1:3)
 
-  db2 <- expect_message(
-    db %>% mutate(y = x + 1) %>% compute(),
+  expect_message(
+    db2 <- db %>% mutate(y = x + 1) %>% compute(),
     "Created a temporary table"
   )
   expect_equal(db2 %>% pull(), 2:4)
@@ -196,4 +322,282 @@ test_that("as.integer and as.integer64 translations if parsing failures", {
   expect_identical(out$integer, c(1L, NA))
   expect_identical(out$integer64, bit64::as.integer64(c(1L, NA)))
   expect_identical(out$numeric, c(1.3, NA))
+})
+
+test_that("can insert", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1L, b = 11L, c = 1L, d = "a")
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_insert(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      conflict = "ignore"
+    ) %>%
+      collect(),
+    tibble(
+      a = 1:3,
+      b = 11:13,
+      c = c(1L, -1L, -2L),
+      d = c("a", "y", "z")
+    )
+  )
+})
+
+test_that("can insert with returning", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1L, b = 11L, c = 1L, d = "a")
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_insert(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      conflict = "ignore",
+      returning = everything()
+    ) %>%
+      get_returned_rows(),
+    tibble(
+      a = 2:3,
+      b = 12:13,
+      c = c(-1L, -2L),
+      d = c("y", "z")
+    )
+  )
+})
+
+test_that("can append", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1L, b = 11L, c = 1L, d = "a")
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 1:3, b = 11:13, c = -(2:4), d = c("y", "z", "w"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_append(
+      x, y,
+      in_place = TRUE
+    ) %>%
+      collect(),
+    tibble(
+      a = c(1L, 1:3),
+      b = c(11L, 11:13),
+      c = c(1L, -1L, -2L, -3L),
+      d = c("a", "y", "z", "w")
+    )
+  )
+})
+
+test_that("can append with returning", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1L, b = 11L, c = 1L, d = "a")
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 1:3, b = 11:13, c = -(2:4), d = c("y", "z", "w"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_append(
+      x, y,
+      in_place = TRUE,
+      returning = everything()
+    ) %>%
+      get_returned_rows(),
+    tibble(
+      a = 1:3,
+      b = 11:13,
+      c = c(-1L, -2L, -3L),
+      d = c("y", "z", "w")
+    )
+  )
+})
+
+test_that("can update", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:3, b = 11:13, c = 1:3, d = c("a", "b", "c"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_update(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      unmatched = "ignore"
+    ) %>%
+      collect(),
+    tibble(
+      a = 1:3,
+      b = 11:13,
+      c = c(1L, -1L, -2L),
+      d = c("a", "y", "z")
+    )
+  )
+})
+
+test_that("can update with returning", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:3, b = 11:13, c = 1:3, d = c("a", "b", "c"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_update(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      unmatched = "ignore",
+      returning = everything()
+    ) %>%
+      get_returned_rows(),
+    tibble(
+      a = 2:3,
+      b = 12:13,
+      c = c(-1L, -2L),
+      d = c("y", "z")
+    )
+  )
+})
+
+test_that("can upsert", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:2, b = 11:12, c = 1:2, d = c("a", "b"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_upsert(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE
+    ) %>%
+      collect(),
+    tibble(
+      a = 1:3,
+      b = 11:13,
+      c = c(1L, -1L, -2L),
+      d = c("a", "y", "z")
+    )
+  )
+})
+
+test_that("can upsert with returning", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:2, b = 11:12, c = 1:2, d = c("a", "b"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L), c = -(2:3), d = c("y", "z"))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE) %>%
+    mutate(c = c + 1)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_upsert(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      returning = everything()
+    ) %>%
+      get_returned_rows() %>%
+      arrange(a),
+    tibble(
+      a = 2:3,
+      b = 12:13,
+      c = c(-1L, -2L),
+      d = c("y", "z")
+    )
+  )
+})
+
+test_that("can delete", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:3, b = 11:13, c = 1:3, d = c("a", "b", "c"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_delete(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      unmatched = "ignore"
+    ) %>%
+      collect(),
+    tibble(
+      a = 1L,
+      b = 11L,
+      c = 1L,
+      d = "a"
+    )
+  )
+})
+
+test_that("can delete with returning", {
+  con <- src_test("mssql")
+
+  df_x <- tibble(a = 1:3, b = 11:13, c = 1:3, d = c("a", "b", "c"))
+  x <- copy_to(con, df_x, "df_x", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_x")))
+  df_y <- tibble(a = 2:3, b = c(12L, 13L))
+  y <- copy_to(con, df_y, "df_y", temporary = TRUE, overwrite = TRUE)
+  withr::defer(DBI::dbRemoveTable(con, DBI::SQL("#df_y")))
+
+  expect_equal(
+    rows_delete(
+      x, y,
+      by = c("a", "b"),
+      in_place = TRUE,
+      unmatched = "ignore",
+      returning = everything()
+    ) %>%
+      get_returned_rows(),
+    tibble(
+      a = 2:3,
+      b = 12:13,
+      c = 2:3,
+      d = c("b", "c")
+    )
+  )
 })

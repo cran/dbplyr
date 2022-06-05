@@ -12,7 +12,7 @@
 #'
 #' df_sqlite <- tbl_lazy(df, con = simulate_sqlite())
 #' df_sqlite %>% summarise(x = sd(x, na.rm = TRUE)) %>% show_query()
-tbl_lazy <- function(df, con = NULL, src = NULL) {
+tbl_lazy <- function(df, con = NULL, src = NULL, name = "df") {
 
   if (!is.null(src)) {
     warn("`src` is deprecated; please use `con` instead")
@@ -23,7 +23,7 @@ tbl_lazy <- function(df, con = NULL, src = NULL) {
 
   dplyr::make_tbl(
     purrr::compact(c(subclass, "lazy")),
-    ops = op_base_local(df),
+    lazy_query = lazy_query_local(df, name),
     src = src_dbi(con)
   )
 }
@@ -31,19 +31,19 @@ setOldClass(c("tbl_lazy", "tbl"))
 
 #' @export
 #' @rdname tbl_lazy
-lazy_frame <- function(..., con = NULL, src = NULL) {
+lazy_frame <- function(..., con = NULL, src = NULL, .name = "df") {
   con <- con %||% sql_current_con() %||% simulate_dbi()
-  tbl_lazy(tibble(...), con = con, src = src)
+  tbl_lazy(tibble(...), con = con, src = src, name = .name)
 }
 
 #' @export
 dimnames.tbl_lazy <- function(x) {
-  list(NULL, op_vars(x$ops))
+  list(NULL, op_vars(x$lazy_query))
 }
 
 #' @export
 dim.tbl_lazy <- function(x) {
-  c(NA, length(op_vars(x$ops)))
+  c(NA, length(op_vars(x$lazy_query)))
 }
 
 #' @export
@@ -53,7 +53,7 @@ print.tbl_lazy <- function(x, ...) {
 
 #' @export
 as.data.frame.tbl_lazy <- function(x, row.names, optional, ...) {
-  stop("Can not coerce `tbl_lazy` to data.frame", call. = FALSE)
+  cli_abort("Can not coerce {.cls tbl_lazy} to {.cls data.frame}")
 }
 
 #' @importFrom dplyr same_src
@@ -65,7 +65,7 @@ same_src.tbl_lazy <- function(x, y) {
 #' @importFrom dplyr tbl_vars
 #' @export
 tbl_vars.tbl_lazy <- function(x) {
-  op_vars(x$ops)
+  op_vars(x$lazy_query)
 }
 
 #' @importFrom dplyr groups
@@ -74,13 +74,15 @@ groups.tbl_lazy <- function(x) {
   lapply(group_vars(x), as.name)
 }
 
+# nocov start
 # Manually registered in zzz.R
 group_by_drop_default.tbl_lazy <- function(x) {
   TRUE
 }
+# nocov end
 
 #' @importFrom dplyr group_vars
 #' @export
 group_vars.tbl_lazy <- function(x) {
-  op_grps(x$ops)
+  op_grps(x$lazy_query)
 }

@@ -132,17 +132,45 @@ copy_env <- function(from, to = NULL, parent = parent.env(from)) {
 #' @param pad If `TRUE`, the default, pad the infix operator with spaces.
 #' @export
 sql_infix <- function(f, pad = TRUE) {
+  # Unquoting involving infix operators easily create abstract syntax trees
+  # without parantheses where they are needed for printing and translation.
+  # For example `expr(!!expr(2 - 1) * x))`
+  #
+  # See https://adv-r.hadley.nz/quasiquotation.html#non-standard-ast
+  # for more information.
+  #
+  # This is fixed with `escape_infix_expr()`
+  # see https://github.com/tidyverse/dbplyr/issues/634
   assert_that(is_string(f))
 
   if (pad) {
     function(x, y) {
+      x <- escape_infix_expr(enexpr(x), x)
+      y <- escape_infix_expr(enexpr(y), y)
+
       build_sql(x, " ", sql(f), " ", y)
     }
   } else {
     function(x, y) {
+      x <- escape_infix_expr(enexpr(x), x)
+      y <- escape_infix_expr(enexpr(y), y)
+
       build_sql(x, sql(f), y)
     }
   }
+}
+
+escape_infix_expr <- function(xq, x, escape_unary_minus = FALSE) {
+  infix_calls <- c("+", "-", "*", "/", "%%", "^")
+  if (is_call(xq, infix_calls, n = 2)) {
+    return(build_sql("(", x, ")"))
+  }
+
+  if (escape_unary_minus && is_call(xq, "-", n = 1)) {
+    return(build_sql("(", x, ")"))
+  }
+
+  x
 }
 
 #' @rdname sql_variant
@@ -153,13 +181,13 @@ sql_prefix <- function(f, n = NULL) {
   function(...) {
     args <- list(...)
     if (!is.null(n) && length(args) != n) {
-      stop(
-        "Invalid number of args to SQL ", f, ". Expecting ", n,
-        call. = FALSE
-      )
+      cli_abort(
+        "Invalid number of args to SQL function {f}",
+        i = "Expecting {n} and got {length(args)}"
+     )
     }
     if (any(names2(args) != "")) {
-      warning("Named arguments ignored for SQL ", f, call. = FALSE)
+      cli::cli_warn("Named arguments ignored for SQL {f}")
     }
     build_sql(sql(f), args)
   }
@@ -170,9 +198,8 @@ sql_prefix <- function(f, n = NULL) {
 sql_aggregate <- function(f, f_r = f) {
   assert_that(is_string(f))
 
-  warned <- FALSE
   function(x, na.rm = FALSE) {
-    warned <<- check_na_rm(f_r, na.rm, warned)
+    check_na_rm(na.rm)
     build_sql(sql(f), list(x))
   }
 }
@@ -192,9 +219,8 @@ sql_aggregate_2 <- function(f) {
 sql_aggregate_n <- function(f, f_r = f) {
   assert_that(is_string(f))
 
-  warned <- FALSE
   function(..., na.rm = FALSE) {
-    warned <<- check_na_rm(f_r, na.rm, warned)
+    check_na_rm(na.rm)
     build_sql(sql(f), list(...))
   }
 }
@@ -203,25 +229,24 @@ sql_aggregate_win <- function(f) {
   force(f)
 
   function(...) {
-    stop(
-      "`", f, "()` is only available in a windowed (`mutate()`) context",
-      call. = FALSE
-    )
+    # TODO use {.fun {f}} after https://github.com/r-lib/cli/issues/422 is fixed
+    cli_abort("`{f}()`` is only available in a windowed ({.fun mutate}) context")
   }
 }
 
-check_na_rm <- function(f, na.rm, warned) {
-  if (warned || identical(na.rm, TRUE)) {
-    return(warned)
+check_na_rm <- function(na.rm) {
+  if (identical(na.rm, TRUE)) {
+    return()
   }
 
-  warning(
-    "Missing values are always removed in SQL.\n",
-    "Use `", f, "(x, na.rm = TRUE)` to silence this warning\n",
-    "This warning is displayed only once per session.",
-    call. = FALSE
+  cli::cli_warn(
+    c(
+      "Missing values are always removed in SQL aggregation functions.",
+      "Use {.code na.rm = TRUE} to silence this warning"
+    ),
+    .frequency = "regularly",
+    .frequency_id = "dbplyr_check_na_rm"
   )
-  TRUE
 }
 
 #' @rdname sql_variant
@@ -230,7 +255,8 @@ sql_not_supported <- function(f) {
   assert_that(is_string(f))
 
   function(...) {
-    stop(f, " is not available in this SQL variant", call. = FALSE)
+    # TODO use {.fun dbplyr::{fn}} after https://github.com/r-lib/cli/issues/422 is fixed
+    cli_abort("{f} is not available in this SQL variant")
   }
 }
 

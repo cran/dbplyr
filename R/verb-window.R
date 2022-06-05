@@ -22,33 +22,20 @@
 #'   mutate(z = sum(x)) %>%
 #'   show_query()
 window_order <- function(.data, ...) {
-  dots <- quos(...)
-  dots <- partial_eval_dots(dots, vars = op_vars(.data))
+  dots <- partial_eval_dots(.data, ..., .named = FALSE)
   names(dots) <- NULL
 
-  add_op_order(.data, dots)
+  .data$lazy_query <- add_order(.data, dots)
+  .data
 }
 
 # We want to preserve this ordering (for window functions) without
 # imposing an additional arrange, so we have a special op_order
-
-add_op_order <- function(.data, dots = list()) {
-  if (length(dots) == 0) {
-    return(.data)
-  }
-
-  .data$ops <- op_single("order", x = .data$ops, dots = dots)
-  .data
-}
-#' @export
-op_sort.op_order <- function(op) {
-  op$dots
+add_order <- function(.data, dots) {
+  .data$lazy_query$order_vars <- dots
+  .data$lazy_query
 }
 
-#' @export
-sql_build.op_order <- function(op, con, ...) {
-  sql_build(op$x, con, ...)
-}
 
 # Frame -------------------------------------------------------------------
 
@@ -59,15 +46,6 @@ window_frame <- function(.data, from = -Inf, to = Inf) {
   stopifnot(is.numeric(from), length(from) == 1)
   stopifnot(is.numeric(to), length(to) == 1)
 
-  add_op_single("frame", .data, args = list(range = c(from, to)))
-}
-
-#' @export
-op_frame.op_frame <- function(op) {
-  op$args$range
-}
-
-#' @export
-sql_build.op_frame <- function(op, con, ...) {
-  sql_build(op$x, con, ...)
+  .data$lazy_query$frame <- list(range = c(from, to))
+  .data
 }
