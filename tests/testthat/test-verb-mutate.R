@@ -13,7 +13,7 @@ test_that("two mutates equivalent to one", {
 
   df1 <- mf %>% mutate(x2 = x * 2, y4 = y * 4) %>% collect()
   df2 <- mf %>% collect() %>% mutate(x2 = x * 2, y4 = y * 4)
-  expect_equal_tbl(df1, df2)
+  compare_tbl(df1, df2)
 })
 
 test_that("can refer to fresly created values", {
@@ -120,6 +120,53 @@ test_that("constants do not need a new query", {
   )
 })
 
+test_that("mutate() produces nice error messages", {
+  options(lifecycle_verbosity = "quiet")
+  expect_snapshot(error = TRUE, {
+    lazy_frame(x = 1) %>% mutate(z = non_existent + 1)
+
+    # `...` cannot be evaluated
+    lazy_frame(x = 1) %>% mutate(across(x, mean, na.rm = z))
+
+    # `.fns` cannot be evaluated
+    lazy_frame(x = 1) %>% mutate(across(x, .fns = "a"))
+  })
+})
+
+test_that("empty mutate returns input", {
+  df <- lazy_frame(x = 1)
+  gf <- group_by(df, x)
+
+  expect_equal(mutate(df), df)
+  expect_equal(mutate(df, .by = x), df)
+  expect_equal(mutate(gf), gf)
+
+  expect_equal(mutate(df, !!!list()), df)
+  expect_equal(mutate(df, !!!list(), .by = x), df)
+  expect_equal(mutate(gf, !!!list()), gf)
+})
+
+# .by -------------------------------------------------------------------------
+
+test_that("can group transiently using `.by`", {
+  df <- memdb_frame(g = c(1, 1, 2, 1, 2), x = c(5, 2, 1, 2, 3))
+
+  out <- mutate(df, x = mean(x), .by = g) %>%
+    arrange(g) %>%
+    collect()
+
+  expect_identical(out$g, c(1, 1, 1, 2, 2))
+  expect_identical(out$x, c(3, 3, 3, 2, 2))
+  expect_equal(group_vars(out), character())
+})
+
+test_that("can `NULL` out the `.by` column", {
+  df <- lazy_frame(x = 1:3, y = 1:3)
+  out <- mutate(df, x = NULL, .by = x)
+
+  expect_identical(op_vars(out), "y")
+  expect_identical(remote_query(out), sql("SELECT `y`\nFROM `df`"))
+})
 
 # SQL generation -----------------------------------------------------------
 

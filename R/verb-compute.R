@@ -39,7 +39,9 @@ compute.tbl_sql <- function(x,
                             analyze = TRUE,
                             ...,
                             cte = FALSE) {
-  name <- unname(name)
+  if (is_bare_character(x) || is.ident(x) || is.sql(x)) {
+    name <- unname(name)
+  }
   vars <- op_vars(x)
   assert_that(all(unlist(indexes) %in% vars))
   assert_that(all(unlist(unique_indexes) %in% vars))
@@ -55,7 +57,7 @@ compute.tbl_sql <- function(x,
     ...
   )
 
-  tbl_src_dbi(x$src, as.sql(name), colnames(x)) %>%
+  tbl_src_dbi(x$src, as.sql(name, x$src$con), colnames(x)) %>%
     group_by(!!!syms(op_grps(x))) %>%
     window_order(!!!op_sort(x))
 }
@@ -79,6 +81,11 @@ collect.tbl_sql <- function(x, ..., n = Inf, warn_incomplete = TRUE, cte = FALSE
   }
 
   sql <- db_sql_render(x$src$con, x, cte = cte)
-  out <- db_collect(x$src$con, sql, n = n, warn_incomplete = warn_incomplete)
+  tryCatch(
+    out <- db_collect(x$src$con, sql, n = n, warn_incomplete = warn_incomplete),
+    error = function(cnd) {
+      cli_abort("Failed to collect lazy table.", parent = cnd)
+    }
+  )
   dplyr::grouped_df(out, intersect(op_grps(x), names(out)))
 }

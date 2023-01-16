@@ -93,6 +93,14 @@ sql_translation.PqConnection <- function(con) {
           sql_expr(!!string ~ !!pattern)
         }
       },
+      # https://www.postgresql.org/docs/current/functions-matching.html
+      str_like = function(string, pattern, ignore_case = TRUE) {
+        if (isTRUE(ignore_case)) {
+          sql_expr(!!string %ILIKE% !!pattern)
+        } else {
+          sql_expr(!!string %LIKE% !!pattern)
+        }
+      },
       str_replace = function(string, pattern, replacement){
         sql_expr(regexp_replace(!!string, !!pattern, !!replacement))
       },
@@ -208,7 +216,9 @@ sql_translation.PqConnection <- function(con) {
       var = sql_aggregate("VAR_SAMP", "var"),
       all = sql_aggregate("BOOL_AND", "all"),
       any = sql_aggregate("BOOL_OR", "any"),
-      str_flatten = function(x, collapse) sql_expr(string_agg(!!x, !!collapse))
+      str_flatten = function(x, collapse = "") {
+        sql_expr(string_agg(!!x, !!collapse))
+      }
     ),
     sql_translator(.parent = base_win,
       cor = win_aggregate_2("CORR"),
@@ -217,7 +227,7 @@ sql_translation.PqConnection <- function(con) {
       var = win_aggregate("VAR_SAMP"),
       all = win_aggregate("BOOL_AND"),
       any = win_aggregate("BOOL_OR"),
-      str_flatten = function(x, collapse) {
+      str_flatten = function(x, collapse = "") {
         win_over(
           sql_expr(string_agg(!!x, !!collapse)),
           partition = win_current_group(),
@@ -340,6 +350,14 @@ sql_values_subquery.PqConnection <- sql_values_subquery_column_alias
 sql_values_subquery.PostgreSQL <- sql_values_subquery.PqConnection
 
 #' @export
+sql_escape_date.PostgreSQL <- function(con, x) {
+  DBI::dbQuoteLiteral(con, x)
+}
+#' @export
+sql_escape_date.PqConnection <- sql_escape_date.PostgreSQL
+
+
+#' @export
 supports_window_clause.PqConnection <- function(con) {
   TRUE
 }
@@ -349,4 +367,4 @@ supports_window_clause.PostgreSQL <- function(con) {
   TRUE
 }
 
-globalVariables(c("strpos", "%::%", "%FROM%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY", "DATE_TRUNC", "INTERVAL", "FLOOR", "WEEK"))
+globalVariables(c("strpos", "%::%", "%FROM%", "%ILIKE%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY", "DATE_TRUNC", "INTERVAL", "FLOOR", "WEEK"))

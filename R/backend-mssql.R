@@ -26,7 +26,7 @@
 #'
 #' * The `BIT` type is a special type of numeric column used to store
 #'   `TRUE` and `FALSE` values, but can't be used in `WHERE` clauses.
-#'   <https://docs.microsoft.com/en-us/sql/t-sql/data-types/bit-transact-sql?view=sql-server-ver15>
+#'   <https://learn.microsoft.com/en-us/sql/t-sql/data-types/bit-transact-sql?view=sql-server-ver15>
 #'
 #' dbplyr does its best to automatically create the correct type when needed,
 #' but can't do it 100% correctly because it does not have a full type
@@ -328,7 +328,7 @@ simulate_mssql <- function(version = "15.0") {
       .parent = mssql_scalar,
       as.logical = sql_try_cast("BIT"),
       as.Date = sql_try_cast("DATE"),
-      as.POSIXct = sql_try_cast("TIMESTAMP"),
+      as.POSIXct = sql_try_cast("DATETIME2"),
       as.numeric = sql_try_cast("FLOAT"),
       as.double = sql_try_cast("FLOAT"),
 
@@ -358,6 +358,7 @@ simulate_mssql <- function(version = "15.0") {
 
       # percentile_cont needs `OVER()` in mssql
       # https://docs.microsoft.com/en-us/sql/t-sql/functions/percentile-cont-transact-sql?view=sql-server-ver15
+      median = sql_median("PERCENTILE_CONT", "ordered", window = TRUE),
       quantile = sql_quantile("PERCENTILE_CONT", "ordered", window = TRUE)
 
     ),
@@ -385,9 +386,14 @@ mssql_version <- function(con) {
 
 #' @export
 `sql_escape_raw.Microsoft SQL Server` <- function(con, x) {
-  # SQL Server binary constants should be prefixed with 0x
-  # https://docs.microsoft.com/en-us/sql/t-sql/data-types/constants-transact-sql?view=sql-server-ver15#binary-constants
-  paste0(c("0x", format(x)), collapse = "")
+
+  if (is.null(x)) {
+    "NULL"
+  } else {
+    # SQL Server binary constants should be prefixed with 0x
+    # https://docs.microsoft.com/en-us/sql/t-sql/data-types/constants-transact-sql?view=sql-server-ver15#binary-constants
+    paste0(c("0x", format(x)), collapse = "")
+  }
 }
 
 #' @export
@@ -490,7 +496,11 @@ mssql_sql_if <- function(cond, if_true, if_false = NULL, missing = NULL) {
   cond_sql <- with_mssql_bool(eval_tidy(cond))
   if (is_null(missing) || quo_is_null(missing)) {
     if_true_sql <- build_sql(eval_tidy(if_true))
-    if_false_sql <- build_sql(eval_tidy(if_false))
+    if (is_null(if_false) || quo_is_null(if_false)) {
+      if_false_sql <- NULL
+    } else {
+      if_false_sql <- build_sql(eval_tidy(if_false))
+    }
     sql_expr(IIF(!!cond_sql, !!if_true_sql, !!if_false_sql))
   } else {
     sql_if(cond, if_true, if_false, missing)
@@ -503,13 +513,7 @@ mssql_case_when <- function(...) {
 
 #' @export
 `sql_escape_logical.Microsoft SQL Server` <- function(con, x) {
-  if (mssql_needs_bit()) {
-    y <- ifelse(x, "1", "0")
-  } else {
-    y <- as.character(x)
-  }
-  y[is.na(x)] <- "NULL"
-  y
+  dplyr::if_else(x, "1", "0", "NULL")
 }
 
 globalVariables(c("BIT", "CAST", "%AS%", "%is%", "convert", "DATE", "DATENAME", "DATEPART", "IIF", "NOT", "SUBSTRING", "LTRIM", "RTRIM", "CHARINDEX", "SYSDATETIME", "SECOND", "MINUTE", "HOUR", "DAY", "DAYOFWEEK", "DAYOFYEAR", "MONTH", "QUARTER", "YEAR", "BIGINT", "INT"))

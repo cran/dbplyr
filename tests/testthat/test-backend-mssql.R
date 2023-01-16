@@ -26,6 +26,10 @@ test_that("custom scalar translated correctly", {
     sql("IIF(`x`, 'true', 'false')")
   )
   expect_equal(
+    translate_sql(ifelse(x, "true", NULL)),
+    sql("IIF(`x`, 'true', NULL)")
+  )
+  expect_equal(
     translate_sql(if(x) "true" else "false"),
     sql("IIF(`x`, 'true', 'false')")
   )
@@ -59,6 +63,10 @@ test_that("custom aggregators translated correctly", {
   expect_equal(translate_sql(str_flatten(x), window = FALSE), sql("STRING_AGG(`x`, '')"))
   expect_equal(
     translate_sql(quantile(x, 0.5, na.rm = TRUE), window = FALSE),
+    sql("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY `x`) OVER ()")
+  )
+  expect_equal(
+    translate_sql(median(x, na.rm = TRUE), window = FALSE),
     sql("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY `x`) OVER ()")
   )
 })
@@ -144,10 +152,15 @@ test_that("custom escapes translated correctly", {
   expect_snapshot(qry)
 })
 
-test_that("logical escaping depends on context", {
+test_that("logical escaping to 0/1 for both filter() and mutate()", {
   mf <- lazy_frame(x = "abc", con = simulate_mssql())
   expect_snapshot(mf %>% filter(x == TRUE))
   expect_snapshot(mf %>% mutate(x = TRUE))
+})
+
+test_that("sql_escape_raw handles NULLs", {
+  con <- simulate_mssql()
+  expect_equal(sql_escape_raw(con, NULL), "NULL")
 })
 
 test_that("generates custom sql", {
@@ -161,7 +174,7 @@ test_that("generates custom sql", {
   expect_snapshot(sql_query_save(con, sql("SELECT * FROM foo"), in_schema("schema", "tbl"), temporary = FALSE))
 
   lf <- lazy_frame(x = 1:3, con = simulate_mssql())
-  expect_snapshot(lf %>% slice_sample(x))
+  expect_snapshot(lf %>% slice_sample(n = 1))
 
   expect_snapshot(copy_inline(con, tibble(x = 1:2, y = letters[1:2])) %>% remote_query())
   expect_snapshot(copy_inline(con, trees) %>% remote_query())
