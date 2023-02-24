@@ -53,7 +53,6 @@ win_over <- function(expr, partition = NULL, order = NULL, frame = NULL, con = s
   }
   if (length(frame) > 0) {
     if (length(order) == 0) {
-      # TODO use {.code {expr}} after https://github.com/r-lib/cli/issues/422 is fixed
       cli::cli_warn(c(
         "Windowed expression `{expr}` does not have explicit order.",
         i = "Please use {.fun arrange} or {.fun window_order} to make deterministic."
@@ -144,24 +143,60 @@ win_rank <- function(f) {
   force(f)
   function(order = NULL) {
     group <- win_current_group()
+    order <- prepare_win_rank_over(enexpr(order), f = f)
+
     if (!is_null(order)) {
-      cond <- translate_sql((case_when(is.na(!!order) ~ 1L, TRUE ~ 0L)))
+      order_over <- translate_sql_(order, con = sql_current_con())
+
+      order_symbols <- purrr::map_if(order, ~ is_call(.x, "desc", n = 1L), ~ call_args(.x)[[1L]])
+
+      is_na_exprs <- purrr::map(order_symbols, ~ expr(is.na(!!.x)))
+      any_na_expr <- purrr::reduce(is_na_exprs, ~ call2("|", .x, .y))
+
+      cond <- translate_sql((case_when(!!any_na_expr ~ 1L, TRUE ~ 0L)))
       group <- sql(group, cond)
+
+      not_is_na_exprs <- purrr::map(order_symbols, ~ expr(!is.na(!!.x)))
+      no_na_expr <- purrr::reduce(not_is_na_exprs, ~ call2("&", .x, .y))
+    } else {
+      order_over <- win_current_order()
     }
 
     rank_sql <- win_over(
       build_sql(sql(f), list()),
       partition = group,
-      order = order %||% win_current_order(),
+      order = order_over,
       frame = win_current_frame()
     )
 
     if (is_null(order)) {
       rank_sql
     } else {
-      translate_sql(case_when(!is.na(!!order) ~ !!rank_sql))
+      translate_sql(case_when(!!no_na_expr ~ !!rank_sql))
     }
   }
+}
+
+prepare_win_rank_over <- function(order, f, error_call = caller_env()) {
+  if (is.null(order)) {
+    return()
+  }
+
+  if (is_call(order, "c")) {
+    args <- call_args(order)
+    tibble_expr <- expr_text(expr(tibble(!!!args)))
+    cli_abort(c(
+      "Can't use `c()` in {.fun {f}}",
+      i = "Did you mean to use `{tibble_expr}` instead?"
+    ))
+  }
+
+  if (is_call(order, "tibble")) {
+    tibble_args <- call_args(order)
+    return(tibble_args)
+  }
+
+  list(order)
 }
 
 #' @rdname win_over
@@ -223,8 +258,7 @@ win_absent <- function(f) {
   force(f)
 
   function(...) {
-    # TODO use {.fun dbplyr::{fn}} after https://github.com/r-lib/cli/issues/422 is fixed
-    cli_abort("Window function `{f}()` is not supported by this database.")
+    cli_abort("Window function {.fun {f}} is not supported by this database.")
   }
 }
 
@@ -259,7 +293,7 @@ local_con <- function(con, env = parent.frame()) {
 }
 
 set_win_current_group <- function(vars) {
-  stopifnot(is.null(vars) || is.character(vars))
+  check_character(vars, allow_null = TRUE)
 
   old <- sql_context$group_by
   sql_context$group_by <- vars
@@ -267,7 +301,7 @@ set_win_current_group <- function(vars) {
 }
 
 set_win_current_order <- function(vars) {
-  stopifnot(is.null(vars) || is.character(vars))
+  check_character(vars, allow_null = TRUE)
 
   old <- sql_context$order_by
   sql_context$order_by <- vars
@@ -275,7 +309,7 @@ set_win_current_order <- function(vars) {
 }
 
 set_win_current_frame <- function(frame) {
-  stopifnot(is.null(frame) || is.numeric(frame))
+  check_frame_range(frame)
 
   old <- sql_context$frame
   sql_context$frame <- frame
@@ -316,7 +350,7 @@ local_context <- function(x, env = parent.frame()) {
 # Where translation -------------------------------------------------------
 
 uses_window_fun <- function(x, con, lq) {
-  stopifnot(is.list(x))
+  check_list(x)
 
   calls <- unlist(lapply(x, all_calls))
   win_f <- ls(envir = dbplyr_sql_translation(con)$window)
@@ -403,7 +437,7 @@ translate_window_where_all <- function(x, window_funs = common_window_funs()) {
 
 window_where <- function(expr, comp) {
   stopifnot(is.call(expr) || is.name(expr) || is.atomic(expr))
-  stopifnot(is.list(comp))
+  check_list(comp)
 
   list(
     expr = expr,

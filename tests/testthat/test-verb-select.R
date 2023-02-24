@@ -23,6 +23,34 @@ test_that("two selects equivalent to one", {
   expect_named(out, c("b", "c"))
 })
 
+test_that("select after distinct produces subquery", {
+  lf <- lazy_frame(x = 1, y = 1:2)
+  expect_snapshot(
+    lf %>% distinct() %>% select(x)
+  )
+
+  out <- lf %>% distinct() %>% select(x)
+  lq <- out$lazy_query
+  expect_false(lq$distinct)
+  expect_true(lq$x$distinct)
+})
+
+test_that("rename/relocate after distinct is inlined #1141", {
+  lf <- lazy_frame(x = 1, y = 1:2)
+  expect_snapshot({
+    lf %>% distinct() %>% rename(z = y)
+    lf %>% distinct() %>% relocate(y)
+  })
+
+  out <- lf %>% distinct() %>% rename(z = y)
+  lq <- out$lazy_query
+  expect_true(lq$distinct)
+
+  out <- lf %>% distinct() %>% relocate(y)
+  lq <- out$lazy_query
+  expect_true(lq$distinct)
+})
+
 test_that("select operates on mutated vars", {
   mf <- memdb_frame(x = c(1, 2, 3), y = c(3, 2, 1))
 
@@ -69,6 +97,24 @@ test_that("select preserves grouping vars", {
   expect_snapshot(out <- mf %>% select(a) %>% collect())
 
   expect_named(out, c("b", "a"))
+})
+
+test_that("select handles order vars", {
+  lf <- lazy_frame(x = 1, y = 1, z = 1)
+  # can drop order vars
+  expect_equal(lf %>% window_order(y) %>% select(-y) %>% op_sort(), list())
+  expect_equal(lf %>% window_order(desc(y)) %>% select(-y) %>% op_sort(), list())
+  # can rename order vars
+  expect_equal(lf %>% window_order(y) %>% select(y2 = y) %>% op_sort(), list(expr(y2)))
+  expect_equal(
+    lf %>% window_order(desc(y)) %>% select(y2 = y) %>% op_sort(),
+    list(expr(desc(y2)))
+  )
+  # keeps sort order
+  expect_equal(
+    lf %>% window_order(x, y) %>% select(y2 = y, x) %>% op_sort(),
+    list(expr(x), expr(y2))
+  )
 })
 
 test_that("select doesn't relocate grouping vars to the front", {
@@ -228,6 +274,13 @@ test_that("select() produces nice error messages", {
   expect_snapshot(error = TRUE, {
     lf %>% rename_with(toupper, .cols = non_existent)
     lf %>% rename_with(toupper, .cols = non_existent + 1)
+  })
+})
+
+test_that("where() isn't suppored", {
+  lf <- lazy_frame(x = 1)
+  expect_snapshot(error = TRUE, {
+    lf %>% select(where(is.integer))
   })
 })
 

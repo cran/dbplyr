@@ -615,7 +615,7 @@ whole query, you can’t use <code>tail()</code>.</p></li>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="fu">tail</span>(tailnum_delay_db)</span>
 <span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Error in `tail()`:</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ! `tail()` is not supported by sql sources</span></span></code></pre></div>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; ! `tail()` is not supported on database backends.</span></span></code></pre></div>
 <p>You can also ask the database how it plans to execute the query with
 <code>explain()</code>. The output is database dependent, and can be
 esoteric, but learning a bit about it can be very useful because it

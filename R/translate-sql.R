@@ -103,7 +103,7 @@ translate_sql_ <- function(dots,
     return(sql())
   }
 
-  stopifnot(is.list(dots))
+  check_list(dots)
 
   if (!any(have_name(dots))) {
     names(dots) <- NULL
@@ -172,14 +172,16 @@ sql_data_mask <- function(expr, variant, con, window = FALSE,
     if (env_has(special_calls2, name) || env_has(special_calls, name)) {
       env_get(special_calls2, name, inherit = TRUE)
     } else {
-      # TODO use {.fun dbplyr::{fn}} after https://github.com/r-lib/cli/issues/422 is fixed
-      cli_abort("No known translation for `{pkg}::{name}()`")
+      cli_abort("No known translation for {.fun {pkg}::{name}}")
     }
   }
 
   special_calls2$sql <- function(...) {
     dots <- exprs(...)
-    dots <- purrr::map(dots, eval_tidy, env = top_env)
+
+    env <- get_env(expr)
+    dots <- purrr::map(dots, eval_tidy, env = env)
+
     exec(sql, !!!dots)
   }
 
@@ -203,7 +205,7 @@ is_infix_user <- function(x) {
 }
 
 default_op <- function(x, env) {
-  assert_that(is_string(x))
+  check_string(x)
 
   # Check for shiny reactives; these are zero-arg functions
   # so need special handling to give a useful error

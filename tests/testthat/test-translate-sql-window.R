@@ -90,11 +90,47 @@ test_that("win_rank works", {
   local_con(simulate_dbi())
   sql_row_number <- win_rank("ROW_NUMBER")
   expect_equal(
-    sql_row_number(ident("x")),
+    translate_sql(row_number(x)),
     sql("CASE
 WHEN (NOT((`x` IS NULL))) THEN ROW_NUMBER() OVER (PARTITION BY (CASE WHEN ((`x` IS NULL)) THEN 1 ELSE 0 END) ORDER BY `x`)
 END")
   )
+})
+
+test_that("win_rank(desc(x)) works", {
+  local_con(simulate_dbi())
+  expect_equal(
+    translate_sql(row_number(desc(x))),
+    sql("CASE
+WHEN (NOT((`x` IS NULL))) THEN ROW_NUMBER() OVER (PARTITION BY (CASE WHEN ((`x` IS NULL)) THEN 1 ELSE 0 END) ORDER BY `x` DESC)
+END")
+  )
+})
+
+test_that("win_rank(tibble()) works", {
+  local_con(simulate_dbi())
+
+  expect_equal(
+    translate_sql(row_number(tibble(x))),
+    translate_sql(row_number(x))
+  )
+  expect_equal(
+    translate_sql(row_number(tibble(desc(x)))),
+    translate_sql(row_number(desc(x)))
+  )
+
+  expect_equal(
+    translate_sql(row_number(tibble(x, desc(y)))),
+    sql("CASE
+WHEN (NOT((`x` IS NULL)) AND NOT((`y` IS NULL))) THEN ROW_NUMBER() OVER (PARTITION BY (CASE WHEN ((`x` IS NULL) OR (`y` IS NULL)) THEN 1 ELSE 0 END) ORDER BY `x`, `y` DESC)
+END")
+  )
+})
+
+test_that("win_rank(c()) gives an informative error", {
+  expect_snapshot(error = TRUE, {
+    translate_sql(row_number(c(x)))
+  })
 })
 
 test_that("win_cumulative works", {

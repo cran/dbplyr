@@ -9,6 +9,15 @@
       Error in `rows()`:
       ! `from` (1) must be less than `to` (0)
 
+# win_rank(c()) gives an informative error
+
+    Code
+      translate_sql(row_number(c(x)))
+    Condition
+      Error in `prepare_win_rank_over()`:
+      ! Can't use `c()` in `ROW_NUMBER()`
+      i Did you mean to use `tibble(x)` instead?
+
 # window_frame()
 
     Code
@@ -37,7 +46,7 @@
       window_frame(lf, "a")
     Condition
       Error in `window_frame()`:
-      ! is.numeric(from) is not TRUE
+      ! `from` must be a whole number, not the string "a".
 
 ---
 
@@ -45,7 +54,7 @@
       window_frame(lf, 1:2)
     Condition
       Error in `window_frame()`:
-      ! length(from) == 1 is not TRUE
+      ! `from` must be a whole number, not an integer vector.
 
 ---
 
@@ -53,7 +62,7 @@
       window_frame(lf, 1, "a")
     Condition
       Error in `window_frame()`:
-      ! is.numeric(to) is not TRUE
+      ! `to` must be a whole number, not the string "a".
 
 ---
 
@@ -61,5 +70,5 @@
       window_frame(lf, 1, 1:2)
     Condition
       Error in `window_frame()`:
-      ! length(to) == 1 is not TRUE
+      ! `to` must be a whole number, not an integer vector.
 

@@ -1,3 +1,98 @@
+# dbplyr 2.3.1
+
+## Breaking changes
+
+* `window_order()` now only accepts bare symbols or symbols wrapped in `desc()`.
+  This breaking change is necessary to allow `select()` to drop and rename
+  variables used in `window_order()` (@mgirlich, #1103).
+
+## Improved error messages
+
+* `quantile()` and `median()` now error for SQL Server when used in `summarise()`
+  and for PostgreSQL when used in `mutate()` as they can't be properly
+  translated (@mgirlich, #1110).
+
+* Added an informative error for unsupported join arguments `unmatched` and
+  `multiple` (@mgirlich).
+
+* Using predicates, e.g. `where(is.integer)`, in `across()` now produces an
+  error as they never worked anyway (@mgirlich, #1169).
+
+* Catch unsupported argument `pivot_wider(id_expand = TRUE)` and
+  `pivot_longer(cols_vary)` (@mgirlich, #1109).
+
+## Bug fixes in SQL generation
+
+* Fixed an issue when using a window function after a `summarise()` and
+  `select()` (@mgirlich, #1104).
+
+* Fixed an issue when there where at least 3 joins and renamed variables
+  (@mgirlich, #1101).
+
+* `mutate()` and `select()` after `distinct()` now again produce a subquery to
+  generate the correct translation (@mgirlich, #1119, #1141).
+
+* Fixed an issue when using `filter()` on a summarised variable (@mgirlich, #1128).
+
+* `mutate()` + `filter()` now again produces a new query if the `mutate()`
+  uses a window function or SQL (@mgirlich, #1135).
+
+* `across()` and `pick()` can be used (again) in `distinct()` (@mgirlich, #1125).
+
+* The `rows_*()` function work again for tables in a schema in PostgreSQL
+  (@mgirlich, #1133).
+
+## Minor improvements and bug fixes
+
+* `sql()` now evaluates its arguments locally also when used in `across()` (@mgirlich, #1039).
+
+* The rank functions (`row_number()`, `min_rank()`, `rank()`, `dense_rank()`,
+  `percent_rank()`, and `cume_dist()`) now support multiple variables by
+  wrapping them in `tibble()`, e.g. `rank(tibble(x, y))` (@mgirlich, #1118).
+
+* `pull()` now supports the argument `name` (@mgirlich, #1136).
+
+* Added support for `join_by()` added in dplyr 1.1.0 (@mgirlich, #1074).
+
+* Using `by = character()` to perform a cross join is now soft-deprecated in
+  favor of `cross_join()`.
+
+* `full_join()` and `right_join()` are now translated directly to `FULL JOIN`
+  and `RIGHT JOIN` for SQLite as native support was finally added (@mgirlich, #1150).
+
+* `case_match()` now works with strings on the left hand side (@mgirlich, #1143).
+
+* The rank functions (`row_number()`, `min_rank()`, `rank()`, `dense_rank()`,
+  `percent_rank()`, and `cume_dist()`) now work again for variables wrapped in
+  `desc()`, e.g. `row_number(desc(x))` (@mgirlich, #1118).
+
+* Moved argument `auto_index` after `...` in `*_join()` (@mgirlich, #1115).
+
+* Removed dependency on assertthat (@mgirlich, #1112).
+
+* `across()` now uses the original value when a column is overriden to match
+  the behaviour of dplyr. For example `mutate(df, across(c(x, y), ~ .x / x))`
+  now produces
+  
+  ```
+  SELECT `x` / `x` AS `x`, `y` / `x` AS `y`
+  FROM `df`
+  ```
+  
+  instead of
+  
+  ```
+  SELECT `x`, `y` / `x` AS `y`
+  FROM (
+    SELECT `x` / `x` AS `x`, `y`
+    FROM `df`
+  ) 
+  ```
+  
+  (@mgirlich, #1015).
+  
+* Restricted length of table aliases to avoid truncation on certain backends (e.g., Postgres) (@fh-mthomson, #1096)
+
 # dbplyr 2.3.0
 
 * Compatibility with purrr 1.0.0 (@mgirlich, #1085).
@@ -12,7 +107,7 @@
   * The `.by` argument is supported (@mgirlich, #1051).
   * Passing `...` to `across()` is deprecated because the evaluation timing 
     of `...` is ambiguous. Now instead of (e.g.) 
-    `across(a:b, mean, na.rm = TRUE)` use 
+    `across(a:b, mean, na.rm = TRUE)` use  `across(a:b, \(x) mean(x, na.rm = TRUE)`
   * `pick()` is translated (@mgirlich, #1044).
   * `case_match()` is translated (@mgirlich, #1020).
   * `case_when()` now supports the `.default` argument (@mgirlich, #1017).

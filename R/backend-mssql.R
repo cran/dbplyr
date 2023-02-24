@@ -257,8 +257,8 @@ simulate_mssql <- function(version = "15.0") {
       ceiling       = sql_prefix("CEILING"),
 
       # https://dba.stackexchange.com/questions/187090
-      pmin          = sql_not_supported("pmin()"),
-      pmax          = sql_not_supported("pmax()"),
+      pmin          = sql_not_supported("pmin"),
+      pmax          = sql_not_supported("pmax"),
 
       is.null       = mssql_is_null,
       is.na         = mssql_is_null,
@@ -274,7 +274,7 @@ simulate_mssql <- function(version = "15.0") {
       str_length = sql_prefix("LEN"),
       str_c = sql_paste_infix("", "+", function(x) sql_expr(cast(!!x %as% text))),
       # no built in function: https://stackoverflow.com/questions/230138
-      str_to_title = sql_not_supported("str_to_title()"),
+      str_to_title = sql_not_supported("str_to_title"),
       # https://docs.microsoft.com/en-us/sql/t-sql/functions/substring-transact-sql?view=sql-server-ver15
       str_sub = sql_str_sub("SUBSTRING", "LEN", optional_length = FALSE),
 
@@ -302,18 +302,13 @@ simulate_mssql <- function(version = "15.0") {
         if (!label) {
           sql_expr(DATEPART(MONTH, !!x))
         } else {
-          if (!abbr) {
-            sql_expr(DATENAME(MONTH, !!x))
-          } else {
-            cli_abort("{.arg abbr} is not supported in SQL Server translation")
-          }
+          check_unsupported_arg(abbr, FALSE, backend = "SQL Server")
+          sql_expr(DATENAME(MONTH, !!x))
         }
       },
 
       quarter = function(x, with_year = FALSE, fiscal_start = 1) {
-        if (fiscal_start != 1) {
-          cli_abort("{.arg fiscal_start} is not supported in SQL Server translation. Must be 1.")
-        }
+        check_unsupported_arg(fiscal_start, 1, backend = "SQL Server")
 
         if (with_year) {
           sql_expr((DATENAME(YEAR, !!x) + '.' + DATENAME(QUARTER, !!x)))
@@ -356,10 +351,8 @@ simulate_mssql <- function(version = "15.0") {
       var           = sql_aggregate("VAR", "var"),
       str_flatten = function(x, collapse = "") sql_expr(string_agg(!!x, !!collapse)),
 
-      # percentile_cont needs `OVER()` in mssql
-      # https://docs.microsoft.com/en-us/sql/t-sql/functions/percentile-cont-transact-sql?view=sql-server-ver15
-      median = sql_median("PERCENTILE_CONT", "ordered", window = TRUE),
-      quantile = sql_quantile("PERCENTILE_CONT", "ordered", window = TRUE)
+      median = sql_agg_not_supported("median", "SQL Server"),
+      quantile = sql_agg_not_supported("quantile", "SQL Server")
 
     ),
     sql_translator(.parent = base_odbc_win,
@@ -371,7 +364,12 @@ simulate_mssql <- function(version = "15.0") {
           partition = win_current_group(),
           order = win_current_order()
         )
-      }
+      },
+
+      # percentile_cont needs `OVER()` in mssql
+      # https://docs.microsoft.com/en-us/sql/t-sql/functions/percentile-cont-transact-sql?view=sql-server-ver15
+      median = sql_median("PERCENTILE_CONT", "ordered", window = TRUE),
+      quantile = sql_quantile("PERCENTILE_CONT", "ordered", window = TRUE)
     )
 
   )}
@@ -470,7 +468,7 @@ mssql_is_null <- function(x) {
 }
 
 mssql_infix_comparison <- function(f) {
-  assert_that(is_string(f))
+  check_string(f)
   f <- toupper(f)
   function(x, y) {
     mssql_as_bit(build_sql(x, " ", sql(f), " ", y))
