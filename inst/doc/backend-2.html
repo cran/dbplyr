@@ -391,9 +391,9 @@ things:</p>
 someone installs your package they get the latest version of
 dbplyr.</p></li>
 <li><p>Provide a method for the <code>dbplyr_edition</code> generic:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; @importFrom dbplyr dbplyr_edition</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co">#&#39; @export</span></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>dbplyr_edition.myConnectionClass <span class="ot">&lt;-</span> <span class="cf">function</span>(con) 2L</span></code></pre></div>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co">#&#39; @importFrom dbplyr dbplyr_edition</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="co">#&#39; @export</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>dbplyr_edition.myConnectionClass <span class="ot">&lt;-</span> <span class="cf">function</span>(con) 2L</span></code></pre></div>
 <p>This tells dbplyr to use the new generics instead of the old
 generics.</p></li>
 </ul>
