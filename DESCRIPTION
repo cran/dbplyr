@@ -1,7 +1,7 @@
 Type: Package
 Package: dbplyr
 Title: A 'dplyr' Back End for Databases
-Version: 2.3.3
+Version: 2.3.4
 Authors@R: c(
     person("Hadley", "Wickham", , "hadley@rstudio.com", role = c("aut", "cre")),
     person("Maximilian", "Girlich", role = "aut"),
@@ -60,11 +60,11 @@ Collate: 'compat-types-check.R' 'compat-obj-type.R' 'utils.R' 'sql.R'
         'verb-pull.R' 'verb-select.R' 'verb-set-ops.R' 'verb-slice.R'
         'verb-summarise.R' 'verb-uncount.R' 'verb-window.R' 'zzz.R'
 NeedsCompilation: no
-Packaged: 2023-07-07 14:13:59 UTC; hadleywickham
+Packaged: 2023-09-26 13:14:46 UTC; hadleywickham
 Author: Hadley Wickham [aut, cre],
   Maximilian Girlich [aut],
   Edgar Ruiz [aut],
   RStudio [cph, fnd]
 Maintainer: Hadley Wickham <hadley@rstudio.com>
 Repository: CRAN
-Date/Publication: 2023-07-07 15:20:02 UTC
+Date/Publication: 2023-09-26 22:40:02 UTC

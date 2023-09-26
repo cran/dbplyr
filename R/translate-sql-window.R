@@ -7,7 +7,7 @@
 #' the grouping and order context set up by [group_by()] and [arrange()].
 #'
 #' @param expr The window expression
-#' @param parition Variables to partition over
+#' @param partition Variables to partition over
 #' @param order Variables to order by
 #' @param frame A numeric vector of length two defining the frame.
 #' @param f The name of an sql function as a string
@@ -436,7 +436,7 @@ translate_window_where_all <- function(x, window_funs = common_window_funs()) {
 }
 
 window_where <- function(expr, comp) {
-  stopifnot(is.call(expr) || is.name(expr) || is.atomic(expr))
+  stopifnot(is.call(expr) || is.name(expr) || is.atomic(expr) || is.null(expr))
   check_list(comp)
 
   list(

@@ -1,7 +1,7 @@
-88ce8754cd41b3991639ad659d5147e3 *DESCRIPTION
+846bcf5fd946980672ef81ad625e8669 *DESCRIPTION
 3b44dfe91f4912ca3b742aee84e32745 *LICENSE
 2123f26ae490c4ed8bd7c944902faa36 *NAMESPACE
-3093a2a6f556e0a2171cbb32d1b07240 *NEWS.md
+06e7e2545beb145291787c888a026458 *NEWS.md
 9b6ec8ced19017d316d5bf9811c732ce *R/backend-.R
 d550044acbd7d78efab3cef0c23dff86 *R/backend-access.R
 8a20d8a69221e45cbfb07141b0282c1a *R/backend-hana.R
@@ -54,7 +54,7 @@ a01192c9d2b44c44f3d77a6429ec9e12 *R/query.R
 3fae733d7cc80905d7c3a7f082768374 *R/simulate.R
 6a5404bd8f5e01edde6b6a5ddeb3f2cf *R/sql-build.R
 2f5f50e8829efcfaaed05fe005fb013a *R/sql-clause.R
-ea69726e8b29150115efe9e985603fe2 *R/sql-expr.R
+f374f1c8311653a964f2d337814125da *R/sql-expr.R
 a5041a20c83c426ad4313344d0cdd77d *R/sql.R
 40bf446502f9e29378dc9863a5afe06c *R/src-sql.R
 47573e22e3ddee21738c6f9d2fcec708 *R/src_dbi.R
@@ -70,7 +70,7 @@ a3df79799396eb5893362d3d99480e5b *R/tbl-sql.R
 6504d38c3ca9015f258b7b8869f1f396 *R/translate-sql-paste.R
 a370fc700f2d298339171f36c5955822 *R/translate-sql-quantile.R
 f14e3a3c7dd3246d0c9b3a36afada4cb *R/translate-sql-string.R
-50a5a6e6c724a59e955353aa228a933f *R/translate-sql-window.R
+7a8223cc07cbaa490f186847c08ad5e7 *R/translate-sql-window.R
 82633a968d99661c8e7dcca9236524f6 *R/translate-sql.R
 374ff38a4788a0c462738a4e483f2270 *R/utils-format.R
 a3995fe8365bd9abaa37d2e7dde72c40 *R/utils.R
@@ -99,7 +99,7 @@ c163fc4ab2e2f3815442842f7c99e7a4 *R/verb-summarise.R
 53181c4ac86584f62a38f22da7b275c9 *R/verb-window.R
 77525bed287f29edc1c508a7815197b6 *R/zzz.R
 5241dfc9dff16b795989d37ff73b87a9 *README.md
-b1389e6d7792d60f6395eb1152e9c735 *build/dbplyr.pdf
+5fa19cb71b4f117fa4ed85edf8d92a1d *build/dbplyr.pdf
 4f81645819ec3a917f1a1bfa62941c4b *build/vignette.rds
 dee34e1ca8a6ac263113a99d6180be26 *inst/doc/backend-2.R
 d2fe6647d9afa331a441c1262f276571 *inst/doc/backend-2.Rmd
@@ -204,7 +204,7 @@ c0b9427d6d7f09226c58ed923efbb349 *man/tbl_lazy.Rd
 091c41e2c1905c25815b9466dc630a26 *man/tbl_sql.Rd
 3573e74d70f331a8932570cfbc45875d *man/testing.Rd
 24502c15979ac83966afdda4149a2ffa *man/translate_sql.Rd
-2eead668a66be9607910f71d55b1404d *man/win_over.Rd
+98eb487acb9141ed4ee44dd8eb4f3606 *man/win_over.Rd
 b5fa68a24894623a410446d805de8013 *man/window_order.Rd
 c1a44682d2c53dba690e0222461853ae *tests/testthat.R
 eba55e7b48cf8b7ed4ac55e074a45ea1 *tests/testthat/_snaps/backend-.md
@@ -285,7 +285,7 @@ a92c3351413245afbe4078b081580dc2 *tests/testthat/test-backend-redshift.R
 41794db20eeb7d04daa270fdbbfaaee5 *tests/testthat/test-db-escape.R
 e75413867a037f2d2285107693ddf1f0 *tests/testthat/test-db-io.R
 1aa2b3c1bef00b886c1d3dc7f31c9b1c *tests/testthat/test-db-sql.R
-9c0b03f866e06870e461f6b9813eaa72 *tests/testthat/test-escape.R
+ed4c5bcc2d2cccb57f1cd95bad7b81a9 *tests/testthat/test-escape.R
 b388e5badc1bc157c5018b853e33ab41 *tests/testthat/test-ident.R
 e6bd4d572bf3b7c6fb5654214cdc5467 *tests/testthat/test-lazy-join-query.R
 0cef6c879279c78dcafd2ec68912b69d *tests/testthat/test-lazy-select-query.R
@@ -298,7 +298,7 @@ fc9df3d8cff8bd27228995ba47ae781f *tests/testthat/test-remote.R
 df407954b37e4656b8b616140c3f6116 *tests/testthat/test-rows.R
 27b96330514efb340a513b03723d94be *tests/testthat/test-schema.R
 1b9ae28dcc7c8ff07d42b750bb7aac2b *tests/testthat/test-sql-build.R
-7bd75b6d9abf4396728b92b88cb353e6 *tests/testthat/test-sql-expr.R
+8562f4238c5f52d4d41c0227168333a1 *tests/testthat/test-sql-expr.R
 2ce8d7161c8d00032f3c99c92e20a224 *tests/testthat/test-sql.R
 5213b152c2aad622723b4fe9b03eb071 *tests/testthat/test-src_dbi.R
 341e1403ae97111b4025a3d8dc543f8d *tests/testthat/test-tbl-lazy.R
