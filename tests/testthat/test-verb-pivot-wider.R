@@ -136,6 +136,19 @@ test_that("dbplyr_build_wider_spec can handle multiple columns", {
   )
 })
 
+test_that("pivot_wider handles NA column names consistent with tidyr", {
+  df <- memdb_frame(
+    id = "id",
+    x = 1:3,
+    y = c("A", NA, "B")
+  )
+
+  expect_equal(
+    df %>% tidyr::pivot_wider(names_from = y, values_from = x) %>% collect(),
+    df %>% collect() %>% tidyr::pivot_wider(names_from = y, values_from = x)
+  )
+})
+
 # keys ---------------------------------------------------------
 
 test_that("can override default keys", {
@@ -215,7 +228,7 @@ test_that("known bug - building a wider spec with a zero row data frame loses `v
   )
 })
 
-# non-unqiue keys ---------------------------------------------------------
+# non-unique keys ---------------------------------------------------------
 
 test_that("values_fn can be a single function", {
   df <- lazy_frame(a = c(1, 1, 2), key = c("x", "x", "x"), val = c(1, 10, 100))
@@ -282,7 +295,7 @@ test_that("`unused_fn` can summarize unused columns (#990)", {
     res <- tidyr::pivot_wider(df, id_cols = id, unused_fn = list(unused1 = max)) %>%
       collect()
   )
-  expect_named(res, c("id", "a", "b", "unused1"))
+  expect_equal(colnames(res), c("id", "a", "b", "unused1"))
   expect_identical(res$unused1, c(2, 4))
 
   # Globally
@@ -290,7 +303,7 @@ test_that("`unused_fn` can summarize unused columns (#990)", {
     res <- tidyr::pivot_wider(df, id_cols = id, unused_fn = min) %>%
       collect()
   )
-  expect_named(res, c("id", "a", "b", "unused1", "unused2"))
+  expect_equal(colnames(res), c("id", "a", "b", "unused1", "unused2"))
   expect_identical(res$unused1, c(1, 3))
   expect_identical(res$unused2, c(11, 13))
 })

@@ -8,8 +8,10 @@
 #' @include escape.R
 #' @include sql.R
 #' @include utils.R
-#' @include compat-obj-type.R
-#' @include compat-types-check.R
+#' @include import-standalone-obj-type.R
+#' @include import-standalone-types-check.R
+#' @include utils-check.R
+#' @include db-sql.R
 NULL
 
 #' @export
@@ -61,18 +63,19 @@ base_scalar <- sql_translator(
 
   `$`   = sql_infix(".", pad = FALSE),
   `[[`   = function(x, i) {
+    # `x` can be a table, column or even an expression (e.g. for json)
     i <- enexpr(i)
     if (is.character(i)) {
-      build_sql(x, ".", ident(i))
+      glue_sql2(sql_current_con(), "{x}.{.col i}")
     } else if (is.numeric(i)) {
-      build_sql(x, "[", as.integer(i), "]")
+      i <- as.integer(i)
+      glue_sql2(sql_current_con(), "{x}[{.val i}]")
     } else {
       cli_abort("Can only index with strings and numbers")
     }
-
   },
   `[` = function(x, i) {
-    build_sql("CASE WHEN (", i, ") THEN (", x, ") END")
+    glue_sql2(sql_current_con(), "CASE WHEN ({i}) THEN ({x}) END")
   },
 
   `!=`    = sql_infix("!="),
@@ -176,7 +179,7 @@ base_scalar <- sql_translator(
     sql_expr(((!!x)))
   },
   desc = function(x) {
-    build_sql(x, sql(" DESC"))
+    glue_sql2(sql_current_con(), "{x} DESC")
   },
 
   is.null = sql_is_null,
@@ -243,6 +246,15 @@ base_scalar <- sql_translator(
 
   # base R
   nchar = sql_prefix("LENGTH", 1),
+  nzchar = function(x, keepNA = FALSE) {
+    if (keepNA) {
+      exp <- expr(!!x != "")
+      translate_sql(!!exp, con = sql_current_con())
+    } else {
+      exp <- expr((is.na(!!x) | !!x != ""))
+      translate_sql(!!exp, con = sql_current_con())
+    }
+  },
   tolower = sql_prefix("LOWER", 1),
   toupper = sql_prefix("UPPER", 1),
   trimws = function(x, which = "both") sql_str_trim(x, side = which),
@@ -251,6 +263,9 @@ base_scalar <- sql_translator(
   substr = sql_substr("SUBSTR"),
   substring = sql_substr("SUBSTR"),
   cut = sql_cut,
+  runif = function(n = n(), min = 0, max = 1) {
+    sql_runif(RANDOM(), n = {{ n }}, min = min, max = max)
+  },
 
   # stringr functions
   str_length = sql_prefix("LENGTH", 1),
@@ -270,8 +285,28 @@ base_scalar <- sql_translator(
 
   str_conv = sql_not_supported("str_conv"),
   str_count = sql_not_supported("str_count"),
-  str_detect = sql_not_supported("str_detect"),
+
+  fixed = function(pattern, ignore_case = FALSE) {
+    check_unsupported_arg(ignore_case, allowed = FALSE)
+    pattern
+  },
+  str_detect = function(string, pattern, negate = FALSE) {
+    sql_str_pattern_switch(
+      string = string,
+      pattern = {{ pattern }},
+      negate = negate,
+      f_fixed = sql_str_detect_fixed_instr("detect")
+    )
+  },
   str_dup = sql_not_supported("str_dup"),
+  str_ends = function(string, pattern, negate = FALSE) {
+    sql_str_pattern_switch(
+      string = string,
+      pattern = {{ pattern }},
+      negate = negate,
+      f_fixed = sql_str_detect_fixed_instr("end")
+    )
+  },
   str_extract = sql_not_supported("str_extract"),
   str_extract_all = sql_not_supported("str_extract_all"),
   str_flatten = sql_not_supported("str_flatten"),
@@ -293,6 +328,14 @@ base_scalar <- sql_translator(
   str_split = sql_not_supported("str_split"),
   str_split_fixed = sql_not_supported("str_split_fixed"),
   str_squish = sql_not_supported("str_squish"),
+  str_starts = function(string, pattern, negate = FALSE) {
+    sql_str_pattern_switch(
+      string = string,
+      pattern = {{ pattern }},
+      negate = negate,
+      f_fixed = sql_str_detect_fixed_instr("start")
+    )
+  },
   str_subset = sql_not_supported("str_subset"),
   str_trunc = sql_not_supported("str_trunc"),
   str_view = sql_not_supported("str_view"),
@@ -351,7 +394,7 @@ base_agg <- sql_translator(
   # nth = sql_prefix("NTH_VALUE", 2),
 
   n_distinct = function(x) {
-    build_sql("COUNT(DISTINCT ", x, ")")
+    glue_sql2(sql_current_con(), "COUNT(DISTINCT {x})")
   }
 )
 
@@ -366,37 +409,40 @@ base_win <- sql_translator(
   dense_rank   = win_rank("DENSE_RANK"),
   percent_rank = win_rank("PERCENT_RANK"),
   cume_dist    = win_rank("CUME_DIST"),
-  ntile        = function(order_by, n) {
+  ntile        = function(x, n) {
     win_over(
       sql_expr(NTILE(!!as.integer(n))),
       win_current_group(),
-      order_by %||% win_current_order()
+      x %||% win_current_order()
     )
   },
 
   # Variants that take more arguments
-  first = function(x, order_by = NULL) {
-    win_over(
-      sql_expr(FIRST_VALUE(!!x)),
-      win_current_group(),
-      order_by %||% win_current_order(),
-      win_current_frame()
+  first = function(x, order_by = NULL, na_rm = FALSE) {
+    sql_nth(
+      x = x,
+      n = 1L,
+      order_by = order_by,
+      na_rm = na_rm,
+      ignore_nulls = "inside"
     )
   },
-  last = function(x, order_by = NULL) {
-    win_over(
-      sql_expr(LAST_VALUE(!!x)),
-      win_current_group(),
-      order_by %||% win_current_order(),
-      win_current_frame() %||% c(-Inf, Inf)
+  last = function(x, order_by = NULL, na_rm = FALSE) {
+    sql_nth(
+      x = x,
+      n = Inf,
+      order_by = order_by,
+      na_rm = na_rm,
+      ignore_nulls = "inside"
     )
   },
-  nth = function(x, n, order_by = NULL) {
-    win_over(
-      sql_expr(NTH_VALUE(!!x, !!as.integer(n))),
-      win_current_group(),
-      order_by %||% win_current_order(),
-      win_current_frame()
+  nth = function(x, n, order_by = NULL, na_rm = FALSE) {
+    sql_nth(
+      x = x,
+      n = n,
+      order_by = order_by,
+      na_rm = na_rm,
+      ignore_nulls = "inside"
     )
   },
 
@@ -446,7 +492,7 @@ base_win <- sql_translator(
     )
   },
   n_distinct = function(x) {
-    win_over(build_sql("COUNT(DISTINCT ", x, ")"), win_current_group())
+    win_over(glue_sql2(sql_current_con(), "COUNT(DISTINCT {x})"), win_current_group())
   },
 
   # Cumulative function are like recycled aggregates except that R names
@@ -503,10 +549,5 @@ base_no_win <- sql_translator(
   str_flatten  = win_absent("str_flatten"),
   count        = win_absent("count")
 )
-
-#' @export
-sql_random.DBIConnection <- function(con) {
-  sql_expr(RANDOM())
-}
 
 utils::globalVariables(c("RANDOM", "%LIKE%"))

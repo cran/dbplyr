@@ -40,6 +40,15 @@
       Error in `slice_by()`:
       ! Can only use `prop` when `with_ties = TRUE`
 
+---
+
+    Code
+      db %>% slice_min(id, n = 1, na_rm = FALSE)
+    Condition
+      Error in `slice_min()`:
+      ! `na_rm = FALSE` isn't supported on database backends.
+      i It must be TRUE instead.
+
 # slice_max orders in opposite order
 
     Code
@@ -47,6 +56,48 @@
     Condition
       Error in `slice_max()`:
       ! `order_by` is absent but must be supplied.
+
+---
+
+    Code
+      db %>% slice_max(id, n = 1, na_rm = FALSE)
+    Condition
+      Error in `slice_max()`:
+      ! `na_rm = FALSE` isn't supported on database backends.
+      i It must be TRUE instead.
+
+# slice_* can use data masking pronouns
+
+    Code
+      lf %>% slice_max(x)
+    Output
+      <SQL>
+      SELECT `x`, `id`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x` DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_max(.data$x)
+    Output
+      <SQL>
+      SELECT `x`, `id`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x` DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_max(.data$x * .env$x)
+    Output
+      <SQL>
+      SELECT `x`, `id`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x` * -1 DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
 
 # slice_sample errors when expected
 
@@ -129,4 +180,75 @@
     Condition
       Error in `slice_sample()`:
       ! Can't supply `by` when `data` is a grouped data frame.
+
+# slice_min/max can order by multiple columns
+
+    Code
+      lf %>% slice_min(tibble(x))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x`) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_min(tibble::tibble(x, y))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x`, `y`) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_min(data.frame(y, x))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `y`, `x`) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+
+---
+
+    Code
+      lf %>% slice_max(tibble(x))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x` DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_max(tibble::tibble(x, y))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `x` DESC, `y` DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+    Code
+      lf %>% slice_max(data.frame(y, x))
+    Output
+      <SQL>
+      SELECT `x`, `y`
+      FROM (
+        SELECT `df`.*, RANK() OVER (ORDER BY `y` DESC, `x` DESC) AS `col01`
+        FROM `df`
+      ) AS `q01`
+      WHERE (`col01` <= 1)
+
+# slice_min/max informs if order_by uses c()
+
+    Can't use `c()` in `slice_min()`
+    i Did you mean to use `tibble(x, y)` instead?
 

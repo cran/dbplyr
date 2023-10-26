@@ -1,15 +1,15 @@
-## ---- include = FALSE---------------------------------------------------------
+## ----include = FALSE----------------------------------------------------------
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 options(tibble.print_min = 6L, tibble.print_max = 6L, digits = 3)
 
-## ---- eval = FALSE------------------------------------------------------------
+## ----eval = FALSE-------------------------------------------------------------
 #  install.packages("dbplyr")
 
 ## ----setup, message = FALSE---------------------------------------------------
 library(dplyr)
 con <- DBI::dbConnect(RSQLite::SQLite(), dbname = ":memory:")
 
-## ---- eval = FALSE------------------------------------------------------------
+## ----eval = FALSE-------------------------------------------------------------
 #  con <- DBI::dbConnect(RMariaDB::MariaDB(),
 #    host = "database.rstudio.com",
 #    user = "hadley",
@@ -62,7 +62,7 @@ tailnum_delay_db %>% show_query()
 tailnum_delay <- tailnum_delay_db %>% collect()
 tailnum_delay
 
-## ---- error = TRUE------------------------------------------------------------
+## ----error = TRUE-------------------------------------------------------------
 nrow(tailnum_delay_db)
 
 tail(tailnum_delay_db)

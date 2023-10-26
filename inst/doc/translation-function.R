@@ -2,31 +2,33 @@
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 options(tibble.print_min = 4L, tibble.print_max = 4L)
 
-## ---- message = FALSE---------------------------------------------------------
+## ----message = FALSE----------------------------------------------------------
 library(dbplyr)
 library(dplyr)
 
-## -----------------------------------------------------------------------------
-translate_sql((x + y) / 2)
+con <- simulate_dbi()
 
 ## -----------------------------------------------------------------------------
-translate_sql(x ^ 2L)
+translate_sql((x + y) / 2, con = con)
+
+## -----------------------------------------------------------------------------
+translate_sql(x ^ 2L, con = con)
 translate_sql(x ^ 2L, con = simulate_sqlite())
 translate_sql(x ^ 2L, con = simulate_access())
 
 ## -----------------------------------------------------------------------------
 # In SQLite variable names are escaped by double quotes:
-translate_sql(x)
+translate_sql(x, con = con)
 # And strings are escaped by single quotes
-translate_sql("x")
+translate_sql("x", con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(substr(x, 5, 10))
-translate_sql(log(x, 10))
+translate_sql(substr(x, 5, 10), con = con)
+translate_sql(log(x, 10), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(1)
-translate_sql(1L)
+translate_sql(1, con = con)
+translate_sql(1L, con = con)
 
 ## -----------------------------------------------------------------------------
 df <- tibble(
@@ -39,31 +41,31 @@ df %>% mutate(x %% y)
 mf %>% mutate(x %% y)
 
 ## -----------------------------------------------------------------------------
-translate_sql(mean(x))
-translate_sql(mean(x, na.rm = TRUE))
+translate_sql(mean(x), con = con)
+translate_sql(mean(x, na.rm = TRUE), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(mean(x, na.rm = TRUE), window = FALSE)
+translate_sql(mean(x, na.rm = TRUE), window = FALSE, con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(if (x > 5) "big" else "small")
-translate_sql(switch(x, a = 1L, b = 2L, 3L))
+translate_sql(if (x > 5) "big" else "small", con = con)
+translate_sql(switch(x, a = 1L, b = 2L, 3L), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(foofify(x, y))
+translate_sql(foofify(x, y), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(FOOFIFY(x, y))
+translate_sql(FOOFIFY(x, y), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(x %LIKE% "%foo%")
+translate_sql(x %LIKE% "%foo%", con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(x %||% y)
+translate_sql(x %||% y, con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(sql("x!"))
-translate_sql(x == sql("ANY VALUES(1, 2, 3)"))
+translate_sql(sql("x!"), con = con)
+translate_sql(x == sql("ANY VALUES(1, 2, 3)"), con = con)
 
 ## -----------------------------------------------------------------------------
 mf <- memdb_frame(x = 1, y = 2)
@@ -76,24 +78,24 @@ mf %>%
   transmute(factorial = sql("CAST(x AS FLOAT)")) %>% 
   show_query()
 
-## ---- error = TRUE------------------------------------------------------------
+## ----error = TRUE-------------------------------------------------------------
 options(dplyr.strict_sql = TRUE)
-translate_sql(glob(x, y))
+translate_sql(glob(x, y), con = con)
 
 ## ----echo = FALSE, out.width = "100%"-----------------------------------------
 knitr::include_graphics("windows.png", dpi = 300)
 
 ## -----------------------------------------------------------------------------
-translate_sql(mean(G))
-translate_sql(rank(G))
-translate_sql(ntile(G, 2))
-translate_sql(lag(G))
+translate_sql(mean(G), con = con)
+translate_sql(rank(G), con = con)
+translate_sql(ntile(G, 2), con = con)
+translate_sql(lag(G), con = con)
 
 ## -----------------------------------------------------------------------------
-translate_sql(cummean(G), vars_order = "year")
-translate_sql(rank(), vars_group = "ID")
+translate_sql(cummean(G), vars_order = "year", con = con)
+translate_sql(rank(), vars_group = "ID", con = con)
 
-## ---- eval = FALSE------------------------------------------------------------
+## ----eval = FALSE-------------------------------------------------------------
 #  mutate(players,
 #    min_rank(yearID),
 #    order_by(yearID, cumsum(G)),

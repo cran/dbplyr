@@ -33,7 +33,7 @@ test_that("zero length inputs yield length-1 output when collapsed", {
 
 # Numeric ------------------------------------------------------------------
 
-test_that("missing vaues become null", {
+test_that("missing values become null", {
   con <- simulate_dbi()
 
   expect_equal(escape(NA, con = con), sql("NULL"))
@@ -59,6 +59,15 @@ test_that("can escape integer64 values", {
   expect_equal(
     escape(bit64::as.integer64("123456789123456789"), con = con),
     sql("123456789123456789")
+  )
+})
+
+test_that("recognises integerish numerics", {
+  expect_equal(is_whole_number(c(1.1, 1.0, 1.000001)), c(FALSE, TRUE, FALSE))
+  con <- simulate_dbi()
+  expect_equal(
+    escape(c(1.1, 1, 1.000001), con = con),
+    sql("(1.1, 1.0, 1.000001)")
   )
 })
 

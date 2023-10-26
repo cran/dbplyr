@@ -70,18 +70,6 @@ fill.tbl_lazy <- function(.data, ..., .direction = c("down", "up", "updown", "do
   )
 }
 
-swap_order_direction <- function(x) {
-  if (is_quosure(x)) {
-    x <- quo_get_expr(x)
-  }
-
-  if (is_call(x, "desc", n = 1)) {
-    call_args(x)[[1]]
-  } else {
-    expr(desc(!!x))
-  }
-}
-
 dbplyr_fill0 <- function(.con, .data, cols_to_fill, order_by_cols, .direction) {
   UseMethod("dbplyr_fill0")
 }
@@ -94,10 +82,10 @@ dbplyr_fill0 <- function(.con, .data, cols_to_fill, order_by_cols, .direction) {
 # * teradata: https://docs.teradata.com/r/756LNiPSFdY~4JcCCcR5Cw/V~t1FC7orR6KCff~6EUeDQ
 #' @export
 dbplyr_fill0.DBIConnection <- function(.con,
-                                          .data,
-                                          cols_to_fill,
-                                          order_by_cols,
-                                          .direction) {
+                                       .data,
+                                       cols_to_fill,
+                                       order_by_cols,
+                                       .direction) {
   # strategy:
   # 1. construct a window
   # * from the first row to the current row
@@ -111,10 +99,11 @@ dbplyr_fill0.DBIConnection <- function(.con,
 
   fill_sql <- purrr::map(
     cols_to_fill,
-    ~ win_over(
-      last_value_sql(.con, .x),
-      partition = if (!is_empty(grps)) escape(ident(op_grps(.data)), con = .con),
-      order = translate_sql(!!!order_by_cols, con = .con),
+    ~ translate_sql(
+      last(!!.x, na_rm = TRUE),
+      vars_group = op_grps(.data),
+      vars_order = translate_sql(!!!order_by_cols, con = .con),
+      vars_frame = c(-Inf, 0),
       con = .con
     )
   ) %>%
@@ -138,16 +127,16 @@ dbplyr_fill0.DBIConnection <- function(.con,
 #   -> `IGNORE NULLS` only in Azure SQL Edge
 #' @export
 dbplyr_fill0.SQLiteConnection <- function(.con,
-                                             .data,
-                                             cols_to_fill,
-                                             order_by_cols,
-                                             .direction) {
+                                          .data,
+                                          cols_to_fill,
+                                          order_by_cols,
+                                          .direction) {
   # this strategy is used for databases that don't support `IGNORE NULLS` in
   # `LAST_VALUE()`.
   #
   # strategy:
   # for each column to fill:
-  # 1. generate a helper column `....dbplyr_partion_x`. It creates one partition
+  # 1. generate a helper column `....dbplyr_partition_x`. It creates one partition
   #    per non-NA value and all following NA (in the order of `order_by_cols`),
   #    i.e. each partition has exactly one non-NA value and any number of NA.
   # 2. use the non-NA value in each partition (`max()` is just the simplest
@@ -162,7 +151,7 @@ dbplyr_fill0.SQLiteConnection <- function(.con,
       vars_group = op_grps(.data),
     )
   ) %>%
-    set_names(paste0("..dbplyr_partion_", seq_along(cols_to_fill)))
+    set_names(paste0("..dbplyr_partition_", seq_along(cols_to_fill)))
 
   dp <- .data %>%
     mutate(!!!partition_sql)
@@ -206,20 +195,3 @@ dbplyr_fill0.MariaDBConnection <- dbplyr_fill0.SQLiteConnection
 dbplyr_fill0.MySQLConnection <- dbplyr_fill0.SQLiteConnection
 #' @export
 dbplyr_fill0.MySQL <- dbplyr_fill0.SQLiteConnection
-
-
-last_value_sql <- function(con, x) {
-  UseMethod("last_value_sql")
-}
-
-#' @export
-last_value_sql.DBIConnection <- function(con, x) {
-  build_sql("LAST_VALUE(", ident(as.character(x)), " IGNORE NULLS)", con = con)
-}
-
-#' @export
-`last_value_sql.Microsoft SQL Server` <- function(con, x) {
-  build_sql("LAST_VALUE(", ident(as.character(x)), ") IGNORE NULLS", con = con)
-}
-
-globalVariables("last_value")

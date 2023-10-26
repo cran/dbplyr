@@ -1,4 +1,4 @@
-## ---- message = FALSE---------------------------------------------------------
+## ----message = FALSE----------------------------------------------------------
 library(dplyr)
 
 con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
