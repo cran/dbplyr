@@ -51,22 +51,19 @@
 #' f <- function(x) x + 1
 #' partial_eval(quote(year > f(1980)), lf)
 #' partial_eval(quote(year > local(f(1980))), lf)
-partial_eval <- function(call, data, env = caller_env(), vars = NULL, error_call) {
-  if (!is_null(vars)) {
-    lifecycle::deprecate_warn("2.1.2", "partial_eval(vars)", always = TRUE)
-    data <- lazy_frame(!!!rep_named(vars, list(logical())))
+partial_eval <- function(call,
+                         data,
+                         env = caller_env(),
+                         vars = deprecated(),
+                         error_call) {
+  if (lifecycle::is_present(vars)) {
+    lifecycle::deprecate_stop("2.1.2", "partial_eval(vars)")
   }
-
   if (is.character(data)) {
-    lifecycle::deprecate_warn(
-      "2.1.2",
-      "partial_eval(data = 'must be a lazy frame')",
-      always = TRUE
-    )
-    data <- lazy_frame(!!!rep_named(data, list(logical())))
+    lifecycle::deprecate_stop("2.1.2", "partial_eval(data = 'must be a lazy frame')", )
   }
 
-  if (is_atomic(call) || is_null(call) || blob::is_blob(call)) {
+  if (is_sql_literal(call)) {
     call
   } else if (is_symbol(call)) {
     partial_eval_sym(call, data, env)
@@ -87,6 +84,10 @@ partial_eval <- function(call, data, env = caller_env(), vars = NULL, error_call
   } else {
     cli_abort("Unknown input type: {typeof(call)}")
   }
+}
+
+is_sql_literal <- function(x) {
+  is_atomic(x) || is_null(x) || blob::is_blob(x)
 }
 
 capture_dot <- function(.data, x) {
@@ -124,7 +125,7 @@ partial_eval_dots <- function(.data,
 
 partial_eval_quo <- function(x, data, error_call, dot_name, was_named) {
   # no direct equivalent in `dtplyr`, mostly handled in `dt_squash()`
-  try_fetch(
+  withCallingHandlers(
     expr <- partial_eval(get_expr(x), data, get_env(x), error_call = error_call),
     error = function(cnd) {
       label <- expr_as_label(x, dot_name)
@@ -153,18 +154,19 @@ partial_eval_sym <- function(sym, data, env) {
   if (name %in% vars) {
     sym
   } else if (env_has(env, name, inherit = TRUE)) {
-    eval_bare(sym, env)
+    # Inline the value so that the translation function can choose what to do
+
+    val <- eval_bare(sym, env)
+    if (is_atomic(val)) {
+      val <- unname(val)
+    }
+    val
   } else {
     cli::cli_abort(
       "Object {.var {name}} not found.",
       call = NULL
     )
   }
-}
-
-is_namespaced_dplyr_call <- function(call) {
-  packages <- c("dplyr", "stringr", "lubridate")
-  is_symbol(call[[1]], "::") && is_symbol(call[[2]], packages)
 }
 
 is_mask_pronoun <- function(call) {
@@ -190,11 +192,9 @@ partial_eval_call <- function(call, data, env) {
     call[[1]] <- fun <- sym(fun_name)
   }
 
-  # So are compound calls, EXCEPT dplyr::foo()
-  if (is.call(fun)) {
-    if (is_namespaced_dplyr_call(fun)) {
-      call[[1]] <- fun[[3]]
-    } else if (is_mask_pronoun(fun)) {
+  # Compound calls, apart from `::` aren't translatable
+  if (is_call(fun) && !is_call(fun, "::")) {
+    if (is_mask_pronoun(fun)) {
       stop("Use local() or remote() to force evaluation of functions", call. = FALSE)
     } else {
       return(eval_bare(call, env))
@@ -216,11 +216,14 @@ partial_eval_call <- function(call, data, env) {
   } else {
     # Process call arguments recursively, unless user has manually called
     # remote/local
-    name <- as_string(call[[1]])
-    if (name == "local") {
+    if (is_call(call, "local")) {
       eval_bare(call[[2]], env)
-    } else if (name == "remote") {
+    } else if (is_call(call, "remote")) {
       call[[2]]
+    } else if (is_call(call, "$")) {
+      # Only the 1st argument is evaluated
+      call[[2]] <- partial_eval(call[[2]], data = data, env = env)
+      call
     } else {
       call[-1] <- lapply(call[-1], partial_eval, data = data, env = env)
       call

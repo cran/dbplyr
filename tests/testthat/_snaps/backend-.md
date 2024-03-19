@@ -11,6 +11,34 @@
       Error in `a[[TRUE]]`:
       ! Can only index with strings and numbers
 
+# $ doesn't evaluate second argument
+
+    Code
+      lazy_frame(x = 1, y = 1) %>% filter(x == y$id)
+    Output
+      <SQL>
+      SELECT `df`.*
+      FROM `df`
+      WHERE (`x` = `y`.`id`)
+
+---
+
+    Code
+      lazy_frame(x = 1) %>% filter(x == y$id)
+    Output
+      <SQL>
+      SELECT `df`.*
+      FROM `df`
+      WHERE (`x` = 1.0)
+
+# useful error if $ used with inlined value
+
+    Code
+      lazy_frame(x = 1) %>% filter(x == y$id)
+    Condition
+      Error in `x$id`:
+      ! $ operator is invalid for atomic vectors
+
 # can translate case insensitive like
 
     Code
@@ -68,16 +96,14 @@
     Code
       sql_query_wrap(con, ident("table"))
     Output
-      <dbplyr_table_ident[1]>
-      [1] `table`
+      <table_path> `table`
 
 ---
 
     Code
       sql_query_wrap(con, in_schema("schema", "tbl"))
     Output
-      <dbplyr_table_ident[1]>
-      [1] `schema`.`tbl`
+      <table_path> `schema`.`tbl`
 
 ---
 
@@ -91,14 +117,14 @@
     Code
       sql_table_index(con, in_schema("schema", "tbl"), c("a", "b"))
     Output
-      <SQL> CREATE INDEX `schema_tbl_a_b` ON `schema`.`tbl` (`a`, `b`)
+      <SQL> CREATE INDEX `tbl_a_b` ON `schema`.`tbl` (`a`, `b`)
 
 ---
 
     Code
       sql_table_index(con, in_schema("schema", "tbl"), "c", unique = TRUE)
     Output
-      <SQL> CREATE UNIQUE INDEX `schema_tbl_c` ON `schema`.`tbl` (`c`)
+      <SQL> CREATE UNIQUE INDEX `tbl_c` ON `schema`.`tbl` (`c`)
 
 ---
 

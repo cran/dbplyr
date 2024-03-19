@@ -106,6 +106,7 @@
 #'     names_from = key,
 #'     values_from = value
 #'   )
+#' @exportS3Method tidyr::pivot_wider
 pivot_wider.tbl_lazy <- function(data,
                                  ...,
                                  id_cols = NULL,
@@ -359,7 +360,7 @@ select_wider_id_cols <- function(data,
     return(names(sim_data))
   }
 
-  try_fetch(
+  withCallingHandlers(
     id_cols <- tidyselect::eval_select(
       enquo(id_cols),
       sim_data,

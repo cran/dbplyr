@@ -1,3 +1,126 @@
+# dbplyr 2.5.0
+
+## Improved tools for qualified table names
+
+* Specification of table names with schema/catalogs has been overhauled to
+  make it simpler. This includes the following features and fixes:
+
+  * The simplest way to refer to a qualified table is now to wrap it in 
+    `I()`, e.g. `I("schema_name.table_name")`.
+    
+  * Use of `sql()` and `ident_q()` inside `in_catalog()` and `in_schema()`
+    is once again supported (#1388).
+    
+  * It's ok to use `ident_q()` once again (#1413) and you should no longer
+    see unsuppressable warnings about using `in_schema()` (#1408).
+    
+  * The names of the arguments to `Id()` no longer matter, only their order 
+    (#1416). Additionally, thanks to changes to the DBI package, you no 
+    longer need to name each argument.
+  
+  * If you accidentally pass a named vector to any of the database identifer
+    functions, those names will be automatically stripped (#1404).
+    
+  * `tbl_sql(check_from)` is now deprecated.
+
+* dbplyr now exports some tools to work with the internal `table_path` class
+  which is useful for certain backends that need to work with this 
+  data structure (#1300).
+
+## Improved SQL
+
+* New translations for clock functions `add_years()`, `add_days()`, 
+  `date_build()`, `get_year()`, `get_month()`, `get_day()`, 
+  and `base::difftime()` on SQL server, Redshift, Snowflake, and Postgres.
+
+* `select()` will keep computed columns used to `arrange()` subqueries that are
+  eliminated by a subsequent select (@ejneer, #1437).
+
+* `semi_join()` will no longer inline away an aggregate filter (i.e. `HAVING`
+  clause) that was followed by a `select()` (@ejneer, #1474)
+
+* Improved function translations:
+
+  * Functions qualified with the base namespace are now also translated, e.g.
+    `base::paste0(x, "_1")` is now translated (@mgirlich, #1022).
+
+  * `-1 + x` now generates a translation instead erroring (#1420).
+
+  * `x$name` never attempts to evaluate `name` (#1368).
+
+  * You can once again use `NULL` on the LHS of an infix operator in order
+    to generate SQL with unusual syntax (#1345).
+    
+  * Namespaced calls now error if the function doesn't exist, or a translation 
+    is not available (#1426).
+
+  * `lead()` translation coerces `n` to an integer.
+
+* Databricks: now supports creating non-temporary tables too (#1418).
+
+* Oracle:
+    
+  * `db_explain()` now works (@thomashulst, #1353).
+
+  * `as.Date()` works when applied to a string (#1389).
+
+  * `head()` is once again translated to `FETCH FIRST`. This does require Oracle 
+    12c or newer, but it actually works, compared to the approach using 
+    `ROWNUM` from #1292 (#1436).
+    
+  * Added support for `str_replace()` and `str_replace_all()` via
+    `REGEXP_REPLACE()` (@thomashulst, #1402).
+
+* Snowflake (@nathanhaigh, #1406)
+
+  * Added support for `str_starts()` and `str_ends()` via `REGEXP_INSTR()`
+
+  * Refactored `str_detect()` to use `REGEXP_INSTR()` so now supports
+    regular expressions.
+
+  * Refactored `grepl()` to use `REGEXP_INSTR()` so now supports
+    case-insensitive matching through `grepl(..., ignore.case = TRUE)`
+
+* SQL server: 
+
+  * Now products a clear error if you attempt to use `n_distinct()` in 
+    `mutate()` or `filter()` (#1366).
+
+  * `filter()` does a better job of converting logical vectors 
+    from bit to boolean (@ejneer, #1288). 
+
+* MySQL: `as.integer()` gets correct translation (@krlmlr, #1375).
+
+## Minor improvements and bug fixes
+
+* Deprecation status of functions deprecated in previous versions (at least
+  2 years old) have been advanced. In particular, `src_sql()` is now defunct,
+  as is the use of `partial_eval()` with character `data`.
+
+* Database errors now show the generated SQL, which hopefully will make it
+  faster to track down problems (#1401).
+
+* When dbplyr creates an index on a table in a schema (e.g. `schema.table`), 
+  it now only includes the table name in the index name, not the schema name.
+
+* The class of remote sources now includes all S4 class names, not just
+  the first (#918).
+
+* `compute()` passes additional arguments all the way to 
+  `sql_query_save()`-methods (@rsund).
+
+* `db_sql_render()` correctly passes on `...` when re-calling with 
+  `sql_options` set (#1394).
+
+* `reframe()` now gives an informative error that it isn't supported (#1148).
+
+* `rows_patch(in_place = FALSE)` now works when more than one column should be
+  patched (@gorcha, #1443).
+
+* New `simulate_mariadb()` (@krlmlr, #1375).
+
+* `sql_translator()` now checks for duplicated definitions (@krlmlr, #1374).
+
 # dbplyr 2.4.0
 
 ## Breaking changes

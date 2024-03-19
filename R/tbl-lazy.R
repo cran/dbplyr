@@ -17,9 +17,11 @@ tbl_lazy <- function(df, con = NULL, ..., name = "df") {
   con <- con %||% sql_current_con() %||% simulate_dbi()
   subclass <- class(con)[[1]]
 
+  name <- as_table_path(name, con)
+
   dplyr::make_tbl(
     purrr::compact(c(subclass, "lazy")),
-    lazy_query = lazy_query_local(df, name),
+    lazy_query = lazy_base_query(df, names(df), class = "local", name = name),
     src = src_dbi(con)
   )
 }
@@ -71,7 +73,7 @@ groups.tbl_lazy <- function(x) {
 }
 
 # nocov start
-# Manually registered in zzz.R
+#' @exportS3Method dplyr::group_by_drop_default
 group_by_drop_default.tbl_lazy <- function(x) {
   TRUE
 }

@@ -110,13 +110,13 @@
       lf %>% select(non_existent)
     Condition
       Error in `select()`:
-      ! Can't subset columns that don't exist.
+      ! Can't select columns that don't exist.
       x Column `non_existent` doesn't exist.
     Code
       lf %>% select(non_existent + 1)
     Condition
       Error in `select()`:
-      ! Problem while evaluating `non_existent + 1`.
+      i In argument: `non_existent + 1`.
       Caused by error:
       ! object 'non_existent' not found
 
@@ -126,13 +126,13 @@
       lf %>% relocate(non_existent)
     Condition
       Error in `relocate()`:
-      ! Can't subset columns that don't exist.
+      ! Can't relocate columns that don't exist.
       x Column `non_existent` doesn't exist.
     Code
       lf %>% relocate(non_existent + 1)
     Condition
       Error in `relocate()`:
-      ! Problem while evaluating `non_existent + 1`.
+      i In argument: `non_existent + 1`.
       Caused by error:
       ! object 'non_existent' not found
 
@@ -153,7 +153,7 @@
       lf %>% rename(y = non_existent + 1)
     Condition
       Error in `rename()`:
-      ! Problem while evaluating `non_existent + 1`.
+      i In argument: `non_existent + 1`.
       Caused by error:
       ! object 'non_existent' not found
 
@@ -163,13 +163,13 @@
       lf %>% rename_with(toupper, .cols = non_existent)
     Condition
       Error in `rename_with()`:
-      ! Can't subset columns that don't exist.
+      ! Can't select columns that don't exist.
       x Column `non_existent` doesn't exist.
     Code
       lf %>% rename_with(toupper, .cols = non_existent + 1)
     Condition
       Error in `rename_with()`:
-      ! Problem while evaluating `non_existent + 1`.
+      i In argument: `non_existent + 1`.
       Caused by error:
       ! object 'non_existent' not found
 
@@ -180,6 +180,22 @@
     Condition
       Error in `select()`:
       ! This tidyselect interface doesn't support predicates.
+
+# arranged computed columns are not inlined away
+
+    Code
+      lf %>% mutate(z = 1) %>% arrange(x, z) %>% select(x)
+    Condition
+      Warning:
+      ORDER BY is ignored in subqueries without LIMIT
+      i Do you need to move arrange() later in the pipeline or use window_order() instead?
+    Output
+      <SQL>
+      SELECT `x`
+      FROM (
+        SELECT `df`.*, 1.0 AS `z`
+        FROM `df`
+      ) AS `q01`
 
 # multiple selects are collapsed
 

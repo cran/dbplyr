@@ -158,7 +158,7 @@ sql_table_index <- function(con,
                             unique = FALSE,
                             ...,
                             call = caller_env()) {
-  as_table_ident(table, error_call = call)
+  check_table_id(table, call = call)
   check_character(columns, call = call)
   check_name(name, allow_null = TRUE, call = call)
   check_bool(unique, call = call)
@@ -173,10 +173,12 @@ sql_table_index.DBIConnection <- function(con,
                                           unique = FALSE,
                                           ...,
                                           call = caller_env()) {
-  table <- as_table_ident(table, error_call = call)
-  table_name <- collapse_table_ident(table, sep = "_")
+  table <- as_table_path(table, con)
 
-  name <- name %||% paste0(c(table_name, columns), collapse = "_")
+  if (is.null(name)) {
+    table_name <- table_path_name(table, con)
+    name <- name %||% paste0(c(table_name, columns), collapse = "_")
+  }
   glue_sql2(
     con,
     "CREATE ", if (unique) "UNIQUE ", "INDEX {.name name}",
@@ -201,23 +203,21 @@ sql_query_explain.DBIConnection <- function(con, sql, ...) {
 #' @rdname db-sql
 #' @export
 sql_query_fields <- function(con, sql, ...) {
-  as_from(sql)
+  check_table_source(sql)
   check_dots_used()
 
   UseMethod("sql_query_fields")
 }
 #' @export
 sql_query_fields.DBIConnection <- function(con, sql, ...) {
-  sql <- as_from(sql)
-
+  sql <- as_table_source(sql, con)
   dbplyr_query_select(con, sql("*"), dbplyr_sql_subquery(con, sql), where = sql("0 = 1"))
 }
 
 #' @rdname db-sql
 #' @export
 sql_query_save <- function(con, sql, name, temporary = TRUE, ...) {
-  as_from(sql)
-  as_table_ident(name)
+  check_table_id(name)
   check_bool(temporary)
   check_dots_used()
 
@@ -225,8 +225,7 @@ sql_query_save <- function(con, sql, name, temporary = TRUE, ...) {
 }
 #' @export
 sql_query_save.DBIConnection <- function(con, sql, name, temporary = TRUE, ...) {
-  sql <- as_from(sql)
-  name <- as_table_ident(name)
+  name <- as_table_path(name, con)
 
   glue_sql2(
     con,
@@ -245,7 +244,7 @@ sql_query_wrap <- function(con, from, name = NULL, ..., lvl = 0) {
 }
 #' @export
 sql_query_wrap.DBIConnection <- function(con, from, name = NULL, ..., lvl = 0) {
-  from <- as_from(from)
+  from <- as_table_source(from, con)
 
   if (is.sql(from)) {
     if (db_supports_table_alias_with_as(con)) {
@@ -257,11 +256,14 @@ sql_query_wrap.DBIConnection <- function(con, from, name = NULL, ..., lvl = 0) {
     from <- sql_indent_subquery(from, con, lvl)
     # some backends, e.g. Postgres, require an alias for a subquery
     name <- name %||% unique_subquery_name()
-    out <- glue_sql2(con, "{from}", as_sql, "{.name name}")
-    return(out)
+    glue_sql2(con, "{from}", as_sql, "{.tbl name}")
+  } else { # must be a table_path
+    if (!is.null(name)) {
+      table <- table_path_name(name, con)
+      names(from) <- as_table_path(table, con)
+    }
+    from
   }
-
-  set_table_ident_alias(from, name)
 }
 
 #' @export
@@ -286,14 +288,14 @@ sql_indent_subquery <- function(from, con, lvl = 0) {
 #' @rdname db-sql
 #' @export
 sql_query_rows <- function(con, sql, ...) {
-  as_from(sql)
+  check_table_source(sql)
   check_dots_used()
 
   UseMethod("sql_query_rows")
 }
 #' @export
 sql_query_rows.DBIConnection <- function(con, sql, ...) {
-  sql <- as_from(sql)
+  sql <- as_table_source(sql, con)
   from <- dbplyr_sql_subquery(con, sql, "master")
   glue_sql2(con, "SELECT COUNT(*) FROM {.from from}")
 }
@@ -686,8 +688,9 @@ sql_query_union.DBIConnection <- function(con, x, unions, ..., lvl = 0) {
 #' These functions generate the SQL used in `rows_*(in_place = TRUE)`.
 #'
 #' @param con Database connection.
-#' @param table Table to update. Must be a table identifier, e.g. single string
-#'   or created via `in_schema()`.
+#' @param table Table to update. Must be a table identifier.
+#'   Use a string to refer to tables in the current schema/catalog or
+#'   `I()` to refer to tables in other schemas/catalogs.
 #' @param from Table or query that contains the new data. Either a table
 #'   identifier or SQL.
 #' @inheritParams dplyr::rows_upsert
@@ -770,8 +773,8 @@ sql_query_insert <- function(con,
                              conflict = c("error", "ignore"),
                              returning_cols = NULL,
                              method = NULL) {
-  as_table_ident(table)
-  as_from(from)
+  check_table_id(table)
+  check_table_source(from)
   check_character(insert_cols)
   check_character(by)
   check_character(returning_cols, allow_null = TRUE)
@@ -790,8 +793,8 @@ sql_query_insert.DBIConnection <- function(con,
                                            conflict = c("error", "ignore"),
                                            returning_cols = NULL,
                                            method = NULL) {
-  table <- as_table_ident(table)
-  from <- as_from(from)
+  table <- as_table_path(table, con)
+  from <- as_table_source(from, con)
 
   method <- method %||% "where_not_exists"
   arg_match(method, "where_not_exists", error_arg = "method")
@@ -820,9 +823,9 @@ sql_query_append <- function(con,
                              ...,
                              returning_cols = NULL) {
   if (is_tbl_lazy(from)) {
-    lifecycle::deprecate_soft(
+    lifecycle::deprecate_warn(
       when = "2.3.2",
-      what = "sql_query_append(from = 'must be a table identifier or an SQL query, not a lazy table.')",
+      what = "sql_query_append(from = 'must be a table identifier or an SQL query, not a lazy table.')"
     )
 
     insert_cols <- colnames(from)
@@ -838,8 +841,8 @@ sql_query_append <- function(con,
     return(out)
   }
 
-  as_table_ident(table)
-  as_from(from)
+  check_table_id(table)
+  check_table_source(from)
   check_character(insert_cols)
   check_character(returning_cols, allow_null = TRUE)
 
@@ -854,8 +857,8 @@ sql_query_append.DBIConnection <- function(con,
                                            insert_cols,
                                            ...,
                                            returning_cols = NULL) {
-  table <- as_table_ident(table)
-  from <- as_from(from)
+  table <- as_table_path(table, con)
+  from <- as_table_source(from, con)
 
   # https://stackoverflow.com/questions/25969/insert-into-values-select-from
   parts <- rows_prep(con, table, from, by = list(), lvl = 0)
@@ -880,8 +883,8 @@ sql_query_update_from <- function(con,
                                   update_values,
                                   ...,
                                   returning_cols = NULL) {
-  as_table_ident(table)
-  as_from(from)
+  check_table_id(table)
+  check_table_source(from)
   check_character(by)
   check_character(update_values)
   check_named(update_values)
@@ -899,8 +902,8 @@ sql_query_update_from.DBIConnection <- function(con,
                                                 update_values,
                                                 ...,
                                                 returning_cols = NULL) {
-  table <- as_table_ident(table)
-  from <- as_from(from)
+  table <- as_table_path(table, con)
+  from <- as_table_source(from, con)
 
   # https://stackoverflow.com/questions/2334712/how-do-i-update-from-a-select-in-sql-server
   parts <- rows_prep(con, table, from, by, lvl = 0)
@@ -928,8 +931,8 @@ sql_query_upsert <- function(con,
                              ...,
                              returning_cols = NULL,
                              method = NULL) {
-  as_table_ident(table)
-  as_from(from)
+  check_table_id(table)
+  check_table_source(from)
   check_character(by)
   check_character(update_cols)
   check_character(returning_cols, allow_null = TRUE)
@@ -949,8 +952,8 @@ sql_query_upsert.DBIConnection <- function(con,
                                            ...,
                                            returning_cols = NULL,
                                            method = NULL) {
-  table <- as_table_ident(table)
-  from <- as_from(from)
+  table <- as_table_path(table, con)
+  from <- as_table_source(from, con)
 
   method <- method %||% "cte_update"
   arg_match(method, "cte_update", error_arg = "method")
@@ -998,8 +1001,8 @@ sql_query_delete <- function(con,
                              by,
                              ...,
                              returning_cols = NULL) {
-  as_table_ident(table)
-  as_from(from)
+  check_table_id(table)
+  check_table_source(from)
   check_character(by)
   check_character(returning_cols, allow_null = TRUE)
 
@@ -1014,8 +1017,8 @@ sql_query_delete.DBIConnection <- function(con,
                                            by,
                                            ...,
                                            returning_cols = NULL) {
-  table <- as_table_ident(table)
-  from <- as_from(from)
+  table <- as_table_path(table, con)
+  from <- as_table_source(from, con)
   parts <- rows_prep(con, table, from, by, lvl = 1)
 
   clauses <- list2(
@@ -1065,13 +1068,8 @@ db_analyze.DBIConnection <- function(con, table, ...) {
   if (is.null(sql)) {
     return() # nocov
   }
-  tryCatch(
-    DBI::dbExecute(con, sql),
-    error = function(cnd) {
-      msg <- "Can't analyze table {.field {format(table, con = con)}}."
-      cli_abort(msg, parent = cnd)
-    }
-  )
+
+  db_execute(con, sql, "Can't analyze table {.field {format(table, con = con)}}.")
 }
 
 dbplyr_create_index <- function(con, ...) {
@@ -1086,13 +1084,7 @@ db_create_index.DBIConnection <- function(con,
                                           unique = FALSE,
                                           ...) {
   sql <- sql_table_index(con, table, columns, name = name, unique = unique, ...)
-  tryCatch(
-    DBI::dbExecute(con, sql),
-    error = function(cnd) {
-      msg <- "Can't create index on table {.field {format(table, con = con)}}."
-      cli_abort(msg, parent = cnd)
-    }
-  )
+  db_execute(con, sql, "Can't create index on table {.field {format(table, con = con)}}.")
 }
 
 dbplyr_explain <- function(con, ...) {
@@ -1102,14 +1094,7 @@ dbplyr_explain <- function(con, ...) {
 #' @importFrom dplyr db_explain
 db_explain.DBIConnection <- function(con, sql, ...) {
   sql <- sql_query_explain(con, sql, ...)
-  call <- current_call()
-  tryCatch(
-    {
-      expl <- DBI::dbGetQuery(con, sql)
-    }, error = function(cnd) {
-      cli_abort("Can't explain query.", parent = cnd)
-    }
-  )
+  expl <- db_get_query(con, sql, "Can't explain query.")
 
   out <- utils::capture.output(print(expl))
   paste(out, collapse = "\n")
@@ -1122,13 +1107,7 @@ dbplyr_query_fields <- function(con, ...) {
 #' @importFrom dplyr db_query_fields
 db_query_fields.DBIConnection <- function(con, sql, ...) {
   sql <- sql_query_fields(con, sql, ...)
-  tryCatch(
-    {
-      df <- DBI::dbGetQuery(con, sql)
-    }, error = function(cnd) {
-      cli_abort("Can't query fields.", parent = cnd)
-    }
-  )
+  df <- db_get_query(con, sql, "Can't query fields.")
   names(df)
 }
 
@@ -1143,22 +1122,18 @@ db_save_query.DBIConnection <- function(con,
                                         temporary = TRUE,
                                         ...,
                                         overwrite = FALSE) {
+  name <- as_table_path(name, con)
   sql <- sql_query_save(con, sql, name, temporary = temporary, ...)
-  tryCatch(
-    {
-      if (overwrite) {
-        name <- as_table_ident(name)
-        name_id <- table_ident_to_id(name)
-        found <- DBI::dbExistsTable(con, name_id)
-        if (found) {
-          DBI::dbRemoveTable(con, name_id)
-        }
-      }
-      DBI::dbExecute(con, sql, immediate = TRUE)
-    }, error = function(cnd) {
-      cli_abort("Can't save query to table {.table {format(name, con = con)}}.", parent = cnd)
+
+  if (overwrite) {
+    found <- DBI::dbExistsTable(con, SQL(name))
+    if (found) {
+      DBI::dbRemoveTable(con, SQL(name))
     }
-  )
+  }
+
+  db_execute(con, sql, "Can't save query to table {.table {format(name, con = con)}}.")
+
   name
 }
 
@@ -1173,4 +1148,31 @@ sql_subquery.DBIConnection <- function(con,
                                        ...,
                                        lvl = 0) {
   sql_query_wrap(con, from = from, name = name, ..., lvl = lvl)
+}
+
+# Helpers -------------------------------------------------------------------
+
+db_execute <- function(con, sql, msg, call = caller_env(), env = caller_env()) {
+  dbi_wrap(
+    dbExecute(con, sql, immediate = TRUE),
+    sql = sql,
+    msg = msg,
+    call = call,
+    env = env
+  )
+  invisible()
+}
+
+db_get_query <- function(con, sql, msg, call = caller_env(), env = caller_env()) {
+  dbi_wrap(dbGetQuery(con, sql), sql, msg, call = call, env = env)
+}
+
+dbi_wrap <- function(code, sql, msg, call = caller_env(), env = caller_env()) {
+  withCallingHandlers(
+    code,
+    error = function(cnd) {
+      msg <- c(msg, i = paste0("Using SQL: ", sql))
+      cli_abort(msg, parent = cnd, call = call, .envir = env)
+    }
+  )
 }

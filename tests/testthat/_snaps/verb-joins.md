@@ -45,10 +45,10 @@
     Code
       left_join(df4, df5, by = "x") %>% remote_query()
     Output
-      <SQL> SELECT `LHS`.*, `z`
-      FROM `foo`.`df` AS `LHS`
-      LEFT JOIN `foo2`.`df` AS `RHS`
-        ON (`LHS`.`x` = `RHS`.`x`)
+      <SQL> SELECT `df_LHS`.*, `z`
+      FROM foo.df AS `df_LHS`
+      LEFT JOIN foo2.df AS `df_RHS`
+        ON (`df_LHS`.`x` = `df_RHS`.`x`)
 
 # alias truncates long table names at database limit
 
@@ -198,6 +198,24 @@
           (`df_LHS`.`x` = `df_RHS`.`x2`) AND
           (`df_RHS`.`a` = 1) AND
           (`df_RHS`.`b` = 2)
+      )
+
+# filtered aggregates with subsequent select are not inlined away in semi_join (#1474)
+
+    Code
+      out
+    Output
+      <SQL>
+      SELECT `df`.*
+      FROM `df`
+      WHERE EXISTS (
+        SELECT 1 FROM (
+        SELECT `x`
+        FROM `df`
+        GROUP BY `x`
+        HAVING (COUNT(*) = 1.0)
+      ) AS `RHS`
+        WHERE (`df`.`x` = `RHS`.`x`)
       )
 
 # multiple joins create a single query

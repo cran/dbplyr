@@ -24,7 +24,11 @@ NULL
 
 #' @export
 #' @rdname backend-mysql
-simulate_mysql <- function() simulate_dbi("MariaDBConnection")
+simulate_mysql <- function() simulate_dbi("MySQLConnection")
+
+#' @export
+#' @rdname backend-mysql
+simulate_mariadb <- function() simulate_dbi("MariaDBConnection")
 
 #' @export
 dbplyr_edition.MariaDBConnection <- function(con) {
@@ -52,7 +56,7 @@ db_connection_describe.MySQLConnection <- db_connection_describe.MariaDBConnecti
 
 #' @export
 db_col_types.MariaDBConnection <- function(con, table, call) {
-  table <- as_table_ident(table, error_call = call)
+  table <- as_table_path(table, con, error_call = call)
   col_info_df <- DBI::dbGetQuery(con, glue_sql2(con, "SHOW COLUMNS FROM {.tbl table};"))
   set_names(col_info_df[["Type"]], col_info_df[["Field"]])
 }
@@ -129,9 +133,24 @@ sql_translation.MariaDBConnection <- function(con) {
 }
 
 #' @export
-sql_translation.MySQL <- sql_translation.MariaDBConnection
+sql_translation.MySQL <- function(con) {
+  maria <- unclass(sql_translation.MariaDBConnection())
+  sql_variant(
+    sql_translator(.parent = maria$scalar,
+      # MySQL doesn't support casting to INTEGER or BIGINT.
+      as.integer = function(x) {
+        sql_expr(TRUNCATE(CAST(!!x %AS% DOUBLE), 0L))
+      },
+      as.integer64 = function(x) {
+        sql_expr(TRUNCATE(CAST(!!x %AS% DOUBLE), 0L))
+      },
+    ),
+    maria$aggregate,
+    maria$window
+  )
+}
 #' @export
-sql_translation.MySQLConnection <- sql_translation.MariaDBConnection
+sql_translation.MySQLConnection <- sql_translation.MySQL
 
 #' @export
 sql_table_analyze.MariaDBConnection <- function(con, table, ...) {
@@ -244,6 +263,20 @@ sql_escape_datetime.MySQLConnection <- sql_escape_datetime.MariaDBConnection
 #' @export
 sql_escape_datetime.MySQL <- sql_escape_datetime.MariaDBConnection
 
+
+# dbQuoteIdentifier() for RMySQL lacks handling of SQL objects
+#' @export
+sql_escape_ident.MySQLConnection <- function(con, x) {
+  if (!isS4(con)) { # for simulate_mysql()
+    NextMethod()
+  } else if (methods::is(x, "SQL")) {
+    x
+  } else {
+    DBI::dbQuoteIdentifier(con, x)
+  }
+}
+
+
 #' @export
 supports_window_clause.MariaDBConnection <- function(con) {
   TRUE
@@ -253,4 +286,4 @@ supports_window_clause.MySQLConnection <- supports_window_clause.MariaDBConnecti
 #' @export
 supports_window_clause.MySQL <- supports_window_clause.MariaDBConnection
 
-utils::globalVariables(c("%separator%", "group_concat", "IF", "REGEXP_INSTR", "RAND", "%LIKE BINARY%"))
+utils::globalVariables(c("%separator%", "group_concat", "IF", "REGEXP_INSTR", "RAND", "%LIKE BINARY%", "TRUNCATE", "DOUBLE"))

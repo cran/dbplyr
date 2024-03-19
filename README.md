@@ -7,7 +7,7 @@
 
 [![CRAN
 status](https://www.r-pkg.org/badges/version/dbplyr)](https://cran.r-project.org/package=dbplyr)
-[![R-CMD-check](https://github.com/tidyverse/dbplyr/workflows/R-CMD-check/badge.svg)](https://github.com/tidyverse/dbplyr/actions)
+[![R-CMD-check](https://github.com/tidyverse/dbplyr/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/tidyverse/dbplyr/actions/workflows/R-CMD-check.yaml)
 [![Codecov test
 coverage](https://codecov.io/gh/tidyverse/dbplyr/branch/main/graph/badge.svg)](https://app.codecov.io/gh/tidyverse/dbplyr?branch=main)
 <!-- badges: end -->
@@ -33,8 +33,8 @@ install.packages("tidyverse")
 install.packages("dbplyr")
 
 # Or the development version from GitHub:
-# install.packages("devtools")
-devtools::install_github("tidyverse/dbplyr")
+# install.packages("pak")
+pak::pak("tidyverse/dbplyr")
 ```
 
 ## Usage
@@ -61,8 +61,8 @@ details). Printing it just retrieves the first few rows:
 ``` r
 mtcars2 <- tbl(con, "mtcars")
 mtcars2
-#> # Source:   table<mtcars> [?? x 11]
-#> # Database: sqlite 3.41.2 [:memory:]
+#> # Source:   table<`mtcars`> [?? x 11]
+#> # Database: sqlite 3.45.0 [:memory:]
 #>      mpg   cyl  disp    hp  drat    wt  qsec    vs    am  gear  carb
 #>    <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
 #>  1  21       6  160    110  3.9   2.62  16.5     0     1     4     4

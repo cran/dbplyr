@@ -361,8 +361,8 @@ subqueries if you want to use a freshly created variable in
 <span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; &lt;SQL&gt;</span></span>
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; SELECT `q01`.*, POWER(`a`, 2.0) AS `b`</span></span>
 <span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; FROM (</span></span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;   SELECT `dbplyr_002`.*, `y` * `x` AS `a`</span></span>
-<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt;   FROM `dbplyr_002`</span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;   SELECT `dbplyr_GGiV9ukuJi`.*, `y` * `x` AS `a`</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="co">#&gt;   FROM `dbplyr_GGiV9ukuJi`</span></span>
 <span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="co">#&gt; ) AS `q01`</span></span></code></pre></div>
 <p>In general, it’s much easier to work iteratively in dbplyr. You can
 easily give intermediate queries names, and reuse them in multiple
@@ -384,15 +384,15 @@ cases, you’ll need to write SQL code directly.</p>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">z =</span> <span class="fu">foofify</span>(x, y)) <span class="sc">%&gt;%</span> </span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="fu">show_query</span>()</span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; &lt;SQL&gt;</span></span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; SELECT `dbplyr_002`.*, foofify(`x`, `y`) AS `z`</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_002`</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; SELECT `dbplyr_GGiV9ukuJi`.*, foofify(`x`, `y`) AS `z`</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_GGiV9ukuJi`</span></span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a></span>
 <span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>mf <span class="sc">%&gt;%</span> </span>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  <span class="fu">filter</span>(x <span class="sc">%LIKE%</span> <span class="st">&quot;%foo%&quot;</span>) <span class="sc">%&gt;%</span> </span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="fu">show_query</span>()</span>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt; &lt;SQL&gt;</span></span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; SELECT `dbplyr_002`.*</span></span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_002`</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; SELECT `dbplyr_GGiV9ukuJi`.*</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_GGiV9ukuJi`</span></span>
 <span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; WHERE (`x` LIKE &#39;%foo%&#39;)</span></span></code></pre></div>
 <p>SQL functions tend to have a greater variety of syntax than R. That
 means there are a number of expressions that can’t be translated
@@ -403,14 +403,14 @@ literal SQL inside <code>sql()</code>:</p>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="fu">show_query</span>()</span>
 <span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; &lt;SQL&gt;</span></span>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; SELECT x! AS `factorial`</span></span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_002`</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_GGiV9ukuJi`</span></span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>mf <span class="sc">%&gt;%</span> </span>
 <span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">factorial =</span> <span class="fu">sql</span>(<span class="st">&quot;CAST(x AS FLOAT)&quot;</span>)) <span class="sc">%&gt;%</span> </span>
 <span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>  <span class="fu">show_query</span>()</span>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; &lt;SQL&gt;</span></span>
 <span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; SELECT CAST(x AS FLOAT) AS `factorial`</span></span>
-<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_002`</span></span></code></pre></div>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; FROM `dbplyr_GGiV9ukuJi`</span></span></code></pre></div>
 <p>Learn more in <code>vignette(&quot;translation-function&quot;)</code>.</p>
 </div>
 

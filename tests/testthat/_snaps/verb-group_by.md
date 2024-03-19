@@ -1,3 +1,12 @@
+# errors about add argument 
+
+    Code
+      gf <- mf %>% group_by(x) %>% group_by(y, add = TRUE)
+    Condition
+      Error:
+      ! The `add` argument of `group_by()` was deprecated in dplyr 1.0.0 and is now defunct.
+      i Please use the `.add` argument instead.
+
 # errors for .drop = FALSE
 
     Code
@@ -33,7 +42,7 @@
       Error in `group_by()`:
       i In argument: `across(non_existent)`
       Caused by error in `across()`:
-      ! Can't subset columns that don't exist.
+      ! Can't select columns that don't exist.
       x Column `non_existent` doesn't exist.
 
 # ungroup() produces nice error messages
@@ -42,6 +51,6 @@
       lazy_frame(x = 1) %>% ungroup(non_existent)
     Condition
       Error in `ungroup()`:
-      ! Can't subset columns that don't exist.
+      ! Can't select columns that don't exist.
       x Column `non_existent` doesn't exist.
 

@@ -12,50 +12,42 @@
 #'   to avoid retrieving them from the database.
 #'   Mainly useful for better performance when creating
 #'   multiple `tbl` objects.
-#' @param check_from Check if `from` is likely misspecified SQL or a table in a schema.
-tbl_sql <- function(subclass, src, from, ..., vars = NULL, check_from = TRUE) {
-  check_dots_used()
+#' @param check_from `r lifecycle::badge("deprecated")`
+tbl_sql <- function(subclass,
+                    src,
+                    from,
+                    ...,
+                    vars = NULL,
+                    check_from = deprecated()) {
+  # Can't use check_dots_used(), #1429
   check_character(vars, allow_null = TRUE)
-
-  from <- as_from(from)
-  if (check_from) {
-    check_from_for_query_or_schema(from)
+  if (lifecycle::is_present(check_from)) {
+    lifecycle::deprecate_warn("2.5.0", "tbl_sql(check_from)")
   }
 
-  vars <- vars %||% dbplyr_query_fields(src$con, from)
+  is_suspicious <- is_bare_string(from) && grepl(".", from, fixed = TRUE)
+  source <- as_table_source(from, con = src$con)
+
+  withCallingHandlers(
+    vars <- vars %||% dbplyr_query_fields(src$con, source),
+    error = function(err) {
+      if (!is_suspicious) return()
+
+      cli::cli_abort(
+        c(
+          "Failed to find table {source}.",
+          i = "Did you mean {.code from = I({.str {from}})}?"
+        ),
+        parent = err
+      )
+    }
+  )
 
   dplyr::make_tbl(
     c(subclass, "sql", "lazy"),
     src = src,
-    lazy_query = lazy_query_remote(from, vars)
+    lazy_query = lazy_query_remote(source, vars)
   )
-}
-
-check_from_for_query_or_schema <- function(from) {
-  if (!is_table_ident(from)) {
-    return()
-  }
-
-  table <- vctrs::field(from, "table")
-  schema <- vctrs::field(from, "schema")
-
-  if (grepl(" from ", tolower(table), fixed = TRUE)) {
-    cli::cli_inform(c(
-      "It looks like you tried to incorrectly use an SQL query as source.",
-      i = "If you want to select from a query wrap it in {.fn sql}.",
-      i = "If your table actually contains {.val FROM} in the name use {.arg check_from = FALSE} to silence this message."
-    ))
-    return()
-  }
-
-  if (grepl(".", table, fixed = TRUE) && is.na(schema)) {
-    cli::cli_inform(c(
-      "It looks like you tried to incorrectly use a table in a schema as source.",
-      i = "If you want to specify a schema use {.fn in_schema} or {.fn in_catalog}.",
-      i = "If your table actually contains {.val .} in the name use {.arg check_from = FALSE} to silence this message."
-    ))
-    return()
-  }
 }
 
 #' @importFrom dplyr same_src

@@ -20,12 +20,12 @@ named_commas <- function(x) {
 
 commas <- function(...) paste0(..., collapse = ", ")
 
-unique_table_name <- function() {
-  # Needs to use option to unique names across reloads while testing
-  i <- getOption("dbplyr_table_name", 0) + 1
-  options(dbplyr_table_name = i)
-  sprintf("dbplyr_%03i", i)
+unique_table_name <- function(prefix = "") {
+  vals <- c(letters, LETTERS, 0:9)
+  name <- paste0(sample(vals, 10, replace = TRUE), collapse = "")
+  paste0(prefix, "dbplyr_", name)
 }
+
 unique_subquery_name <- function() {
   # Needs to use option so can reset at the start of each query
   i <- getOption("dbplyr_subquery_name", 0) + 1
@@ -82,13 +82,27 @@ res_warn_incomplete <- function(res, hint = "n = -1") {
   cli::cli_warn("Only first {rows} results retrieved. Use {hint} to retrieve all.")
 }
 
-hash_temp <- function(name) {
-  name <- paste0("#", name)
-  cli::cli_inform(
-    paste0("Created a temporary table named ", name),
-    class = c("dbplyr_message_temp_table", "dbplyr_message")
-  )
-  name
+add_temporary_prefix <- function(con, table, temporary = TRUE) {
+  check_table_path(table)
+
+  if (!temporary) {
+    return(table)
+  }
+
+  pieces <- table_path_components(table, con)[[1]]
+  table_name <- pieces[length(pieces)]
+
+  if (substr(table_name, 1, 1) != "#") {
+    new_name <- paste0("#", table_name)
+    cli::cli_inform(
+      paste0("Created a temporary table named ", new_name),
+      class = c("dbplyr_message_temp_table", "dbplyr_message")
+    )
+    pieces[[length(pieces)]] <- new_name
+    table <- make_table_path(pieces, con)
+  }
+
+  table
 }
 # nocov end
 

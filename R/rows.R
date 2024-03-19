@@ -332,7 +332,11 @@ rows_patch.tbl_lazy <- function(x,
     )
 
     patch_columns_y <- paste0(new_columns, "...y")
-    patch_quos <- lapply(new_columns, function(.x) quo(coalesce(!!sym(.x), !!sym(patch_columns_y)))) %>%
+    patch_quos <-
+      lapply(
+        seq_along(new_columns),
+        function(.x) quo(coalesce(!!sym(new_columns[.x]), !!sym(patch_columns_y[.x])))
+      ) %>%
       rlang::set_names(new_columns)
     if (is_empty(new_columns)) {
       patched <- to_patch
@@ -759,22 +763,15 @@ rows_auto_copy <- function(x, y, copy, call = caller_env()) {
 }
 
 rows_get_or_execute <- function(x, sql, returning_cols, call = caller_env()) {
+  error <- "Can't modify database table {.val {remote_name(x)}}."
   con <- remote_con(x)
-  msg <- "Can't modify database table {.val {remote_name(x)}}."
-  tryCatch(
-    {
-      if (is_empty(returning_cols)) {
-        DBI::dbExecute(con, sql, immediate = TRUE)
-      } else {
-        returned_rows <- DBI::dbGetQuery(con, sql, immediate = TRUE)
-        x <- set_returned_rows(x, returned_rows)
-      }
-    },
-    error = function(cnd) {
-      cli_abort(msg, parent = cnd, call = call)
-    }
-  )
 
+  if (is_empty(returning_cols)) {
+    db_execute(con, sql, error, call = call)
+  } else {
+    returned_rows <- db_get_query(con, sql, error, call = call)
+    x <- set_returned_rows(x, returned_rows)
+  }
 
   invisible(x)
 }

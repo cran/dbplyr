@@ -235,6 +235,41 @@ sql_translation.PqConnection <- function(con) {
         )
         sql_expr(DATE_TRUNC(!!unit, !!x))
       },
+
+      # clock ---------------------------------------------------------------
+      add_days = function(x, n, ...) {
+        check_dots_empty()
+        glue_sql2(sql_current_con(), "({.col x} + {.val n}*INTERVAL'1 day')")
+      },
+      add_years = function(x, n, ...) {
+        check_dots_empty()
+        glue_sql2(sql_current_con(), "({.col x} + {.val n}*INTERVAL'1 year')")
+      },
+      date_build = function(year, month = 1L, day = 1L, ..., invalid = NULL) {
+        sql_expr(make_date(!!year, !!month, !!day))
+      },
+      get_year = function(x) {
+        sql_expr(date_part('year', !!x))
+      },
+      get_month = function(x) {
+        sql_expr(date_part('month', !!x))
+      },
+      get_day = function(x) {
+        sql_expr(date_part('day', !!x))
+      },
+
+      difftime = function(time1, time2, tz, units = "days") {
+
+        if (!missing(tz)) {
+          cli::cli_abort("The {.arg tz} argument is not supported for SQL backends.")
+        }
+
+        if (units[1] != "days") {
+          cli::cli_abort('The only supported value for {.arg units} on SQL backends is "days"')
+        }
+
+        sql_expr((CAST(!!time2 %AS% DATE) - CAST(!!time1 %AS% DATE)))
+      },
     ),
     sql_translator(.parent = base_agg,
       cor = sql_aggregate_2("CORR"),
@@ -407,7 +442,7 @@ db_supports_table_alias_with_as.PostgreSQL <- function(con) {
 
 #' @export
 db_col_types.PqConnection <- function(con, table, call) {
-  table <- as_table_ident(table, error_call = call)
+  table <- as_table_path(table, con, error_call = call)
   res <- DBI::dbSendQuery(con, glue_sql2(con, "SELECT * FROM {.tbl table} LIMIT 0"))
   on.exit(DBI::dbClearResult(res))
   DBI::dbFetch(res, n = 0)
@@ -418,4 +453,4 @@ db_col_types.PqConnection <- function(con, table, call) {
 #' @export
 db_col_types.PostgreSQL <- db_col_types.PqConnection
 
-utils::globalVariables(c("strpos", "%::%", "%FROM%", "%ILIKE%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY", "DATE_TRUNC", "INTERVAL", "FLOOR", "WEEK"))
+utils::globalVariables(c("strpos", "%::%", "%FROM%", "%ILIKE%", "DATE", "EXTRACT", "TO_CHAR", "string_agg", "%~*%", "%~%", "MONTH", "DOY", "DATE_TRUNC", "INTERVAL", "FLOOR", "WEEK", "make_date", "date_part"))

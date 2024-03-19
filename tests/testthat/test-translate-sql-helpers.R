@@ -22,6 +22,12 @@ test_that("missing window functions create a warning", {
   )
 })
 
+test_that("duplicates throw an error", {
+  expect_snapshot(error = TRUE, {
+    sql_translator(round = function(x) x, round = function(y) y)
+  })
+})
+
 test_that("missing aggregate functions filled in", {
   local_con(simulate_dbi())
   sim_scalar <- sql_translator()
@@ -57,14 +63,18 @@ test_that("can translate infix expression without parentheses", {
 test_that("unary minus works with expressions", {
   local_con(simulate_dbi())
   expect_equal(test_translate_sql(-!!expr(x+2)), sql("-(`x` + 2.0)"))
-  expect_equal(test_translate_sql(--x), sql("-(-`x`)"))
+  expect_equal(test_translate_sql(--x), sql("--`x`"))
 })
 
-test_that("pad = FALSE works", {
+test_that("sql_infix generates expected output (#1345)", {
   local_con(simulate_dbi())
-  subset <- sql_infix(".", pad = FALSE)
+  x <- ident_q("x")
+  y <- ident_q("y")
 
-  expect_equal(subset(ident("df"), ident("x")), sql("`df`.`x`"))
+  expect_equal(sql_infix("-", pad = FALSE)(x, y), sql("x-y"))
+  expect_equal(sql_infix("-", pad = FALSE)(NULL, y), sql("-y"))
+  expect_equal(sql_infix("-")(x, y), sql("x - y"))
+  expect_equal(sql_infix("-")(NULL, y), sql("- y"))
 })
 
 test_that("sql_prefix checks arguments", {

@@ -14,11 +14,18 @@ test_that("simple expressions left as is", {
   expect_equal(capture_dot(lf, FALSE), FALSE)
 })
 
-test_that("existing non-variables get inlined", {
+test_that("existing atomic non-variables get inlined", {
   lf <- lazy_frame(x = 1:10, y = 1:10)
 
   n <- 10
   expect_equal(capture_dot(lf, x + n), expr(x + 10))
+})
+
+test_that("names are stripped", {
+  lf <- lazy_frame(x = "a")
+  y <- c(x = "a", "b")
+
+  expect_equal(partial_eval(quote(x %in% y), lf), expr(x %in% !!c("a", "b")))
 })
 
 test_that("using environment of inlined quosures", {
@@ -28,22 +35,6 @@ test_that("using environment of inlined quosures", {
   quo <- new_quosure(quote(x + n), env(n = 20))
 
   expect_equal(capture_dot(lf, f(!!quo)), quote(f(x + 20)))
-})
-
-test_that("namespace operators always evaluated locally", {
-  lf <- lazy_frame(x = 1, y = 2)
-
-  expect_equal(partial_eval(quote(base::sum(1, 2)), lf), 3)
-  expect_equal(partial_eval(quote(base:::sum(1, 2)), lf), 3)
-})
-
-test_that("namespaced calls to dplyr functions are stripped", {
-  lf <- lazy_frame(x = 1, y = 2)
-
-  expect_equal(partial_eval(quote(dplyr::n()), lf), expr(n()))
-  # hack to avoid check complaining about not declared imports
-  expect_equal(partial_eval(rlang::parse_expr("stringr::str_to_lower(x)"), lf), expr(str_to_lower(x)))
-  expect_equal(partial_eval(rlang::parse_expr("lubridate::today()"), lf), expr(today()))
 })
 
 test_that("use quosure environment for unevaluted formulas", {
@@ -81,4 +72,11 @@ test_that("fails with multi-classes", {
   lf <- lazy_frame(x = 1, y = 2)
   x <- structure(list(), class = c('a', 'b'))
   expect_error(partial_eval(x, lf), "Unknown input type", fixed = TRUE)
+})
+
+test_that("old arguments are defunct", {
+  expect_snapshot(error = TRUE, {
+    partial_eval(quote(x), vars = c("x", "y"))
+    partial_eval(quote(x), data = c("x", "y"))
+  })
 })

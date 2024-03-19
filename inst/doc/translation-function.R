@@ -1,8 +1,8 @@
-## ----setup, include = FALSE---------------------------------------------------
+## -----------------------------------------------------------------------------
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 options(tibble.print_min = 4L, tibble.print_max = 4L)
 
-## ----message = FALSE----------------------------------------------------------
+## -----------------------------------------------------------------------------
 library(dbplyr)
 library(dplyr)
 
@@ -78,11 +78,11 @@ mf %>%
   transmute(factorial = sql("CAST(x AS FLOAT)")) %>% 
   show_query()
 
-## ----error = TRUE-------------------------------------------------------------
+## -----------------------------------------------------------------------------
 options(dplyr.strict_sql = TRUE)
 translate_sql(glob(x, y), con = con)
 
-## ----echo = FALSE, out.width = "100%"-----------------------------------------
+## -----------------------------------------------------------------------------
 knitr::include_graphics("windows.png", dpi = 300)
 
 ## -----------------------------------------------------------------------------
@@ -95,7 +95,7 @@ translate_sql(lag(G), con = con)
 translate_sql(cummean(G), vars_order = "year", con = con)
 translate_sql(rank(), vars_group = "ID", con = con)
 
-## ----eval = FALSE-------------------------------------------------------------
+## -----------------------------------------------------------------------------
 #  mutate(players,
 #    min_rank(yearID),
 #    order_by(yearID, cumsum(G)),

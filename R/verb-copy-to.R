@@ -13,6 +13,9 @@
 #'   from another source. If from another source, all data must transition
 #'   through R in one pass, so it is only suitable for transferring small
 #'   amounts of data.
+#' @param name Name of new remote table. Use a string to create the table
+#'   in the current catalog/schema. Use `I()` if you want to create it
+#'   in a specific catalog/schema, e.g. `I("schema.table")`.
 #' @param types a character vector giving variable types to use for the columns.
 #'    See <https://www.sqlite.org/datatype3.html> for available types.
 #' @param temporary if `TRUE`, will create a temporary table that is
@@ -62,7 +65,7 @@ copy_to.src_sql <- function(dest,
     cli_abort("{.var df} must be a local dataframe or a remote tbl_sql")
   }
 
-  name <- as_table_ident(name)
+  name <- as_table_path(name, dest$con)
 
   if (inherits(df, "tbl_sql") && same_src(df$src, dest)) {
     out <- compute(df,
@@ -181,8 +184,8 @@ sql_render.values_query <- function(query,
 }
 
 #' @export
-flatten_query.values_query <- function(qry, query_list) {
-  querylist_reuse_query(qry, query_list)
+flatten_query.values_query <- function(qry, query_list, con) {
+  querylist_reuse_query(qry, query_list, con)
 }
 
 #' @export
