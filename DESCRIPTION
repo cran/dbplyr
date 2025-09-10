@@ -1,7 +1,7 @@
 Type: Package
 Package: dbplyr
 Title: A 'dplyr' Back End for Databases
-Version: 2.5.0
+Version: 2.5.1
 Authors@R: c(
     person("Hadley", "Wickham", , "hadley@posit.co", role = c("aut", "cre")),
     person("Maximilian", "Girlich", role = "aut"),
@@ -25,14 +25,14 @@ Imports: blob (>= 1.2.0), cli (>= 3.6.1), DBI (>= 1.1.3), dplyr (>=
         2.5.0)
 Suggests: bit64, covr, knitr, Lahman, nycflights13, odbc (>= 1.4.2),
         RMariaDB (>= 1.2.2), rmarkdown, RPostgres (>= 1.4.5),
-        RPostgreSQL, RSQLite (>= 2.3.1), testthat (>= 3.1.10)
+        RPostgreSQL, RSQLite (>= 2.3.8), testthat (>= 3.1.10)
 VignetteBuilder: knitr
 Config/Needs/website: tidyverse/tidytemplate
 Config/testthat/edition: 3
 Config/testthat/parallel: TRUE
 Encoding: UTF-8
 Language: en-gb
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.3
 Collate: 'db-sql.R' 'utils-check.R' 'import-standalone-types-check.R'
         'import-standalone-obj-type.R' 'utils.R' 'sql.R' 'escape.R'
         'translate-sql-cut.R' 'translate-sql-quantile.R'
@@ -65,11 +65,11 @@ Collate: 'db-sql.R' 'utils-check.R' 'import-standalone-types-check.R'
         'verb-select.R' 'verb-set-ops.R' 'verb-slice.R'
         'verb-summarise.R' 'verb-uncount.R' 'verb-window.R' 'zzz.R'
 NeedsCompilation: no
-Packaged: 2024-03-15 17:27:18 UTC; hadleywickham
+Packaged: 2025-09-09 16:38:28 UTC; hadleywickham
 Author: Hadley Wickham [aut, cre],
   Maximilian Girlich [aut],
   Edgar Ruiz [aut],
   Posit Software, PBC [cph, fnd]
 Maintainer: Hadley Wickham <hadley@posit.co>
 Repository: CRAN
-Date/Publication: 2024-03-19 17:00:05 UTC
+Date/Publication: 2025-09-10 07:51:05 UTC

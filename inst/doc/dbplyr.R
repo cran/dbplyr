@@ -3,18 +3,18 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 options(tibble.print_min = 6L, tibble.print_max = 6L, digits = 3)
 
 ## ----eval = FALSE-------------------------------------------------------------
-#  install.packages("dbplyr")
+# install.packages("dbplyr")
 
 ## ----setup, message = FALSE---------------------------------------------------
 library(dplyr)
 con <- DBI::dbConnect(RSQLite::SQLite(), dbname = ":memory:")
 
 ## ----eval = FALSE-------------------------------------------------------------
-#  con <- DBI::dbConnect(RMariaDB::MariaDB(),
-#    host = "database.rstudio.com",
-#    user = "hadley",
-#    password = rstudioapi::askForPassword("Database password")
-#  )
+# con <- DBI::dbConnect(RMariaDB::MariaDB(),
+#   host = "database.rstudio.com",
+#   user = "hadley",
+#   password = rstudioapi::askForPassword("Database password")
+# )
 
 ## -----------------------------------------------------------------------------
 copy_to(con, nycflights13::flights, "flights",
@@ -63,7 +63,9 @@ tailnum_delay <- tailnum_delay_db %>% collect()
 tailnum_delay
 
 ## ----error = TRUE-------------------------------------------------------------
+try({
 nrow(tailnum_delay_db)
 
 tail(tailnum_delay_db)
+})
 

@@ -1,3 +1,27 @@
+# dbplyr 2.5.1
+
+* Improved translations:
+  * SQL Server, Redshift, Snowflake, and Postgres now correctly translate
+    `difftime()` (the sign is now correct)  (@edward-burn, #1532). 
+  * SQL server, Redshift, Snowflake, Postgres, and Spark now
+    translate `date_count_between()` (@edward-burn, #1495).
+  * SQL Server now supports `pmin()` and `pmax()` (@edward-burn, #1602). 
+  * SQL server uses `COUNT_BIG` instead of `COUNT` so `tally()` and
+    `count()` work regardless of data size (@edward-burn, #1498).
+  * Spark correctly translates `clock::add_years()` (@ablack3, #1510).
+  * Teradata now supports `as.double()` and `as.character()` (@rplsmn, #1545).
+
+* Tightened argument checks for SQL translations. These changes should 
+  result in more informative errors in cases where code already failed, possibly
+  silently; if you see errors with code that used to run correctly, please report 
+  them to the package authors (@simonpcouch, #1554, #1555).
+
+* `across(everything())` doesn't select grouping columns created via `.by` in
+  `summarise()` (@mgirlich, #1493).
+
+* Spark SQL backend now supports persisting tables with
+  `compute(x, name = I("x.y.z"), temporary = FALSE)` (@zacdav-db, #1502).
+
 # dbplyr 2.5.0
 
 ## Improved tools for qualified table names

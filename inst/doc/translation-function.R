@@ -79,8 +79,10 @@ mf %>%
   show_query()
 
 ## -----------------------------------------------------------------------------
+try({
 options(dplyr.strict_sql = TRUE)
 translate_sql(glob(x, y), con = con)
+})
 
 ## -----------------------------------------------------------------------------
 knitr::include_graphics("windows.png", dpi = 300)
@@ -96,9 +98,9 @@ translate_sql(cummean(G), vars_order = "year", con = con)
 translate_sql(rank(), vars_group = "ID", con = con)
 
 ## -----------------------------------------------------------------------------
-#  mutate(players,
-#    min_rank(yearID),
-#    order_by(yearID, cumsum(G)),
-#    lead(G, order_by = yearID)
-#  )
+# mutate(players,
+#   min_rank(yearID),
+#   order_by(yearID, cumsum(G)),
+#   lead(G, order_by = yearID)
+# )
 
